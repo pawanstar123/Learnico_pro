@@ -1,0 +1,62 @@
+{% extends 'app.html' %}
+{% block content %}
+
+<div class="header-section">
+    <h2>Register</h2>
+    <p>Create an account to get started</p>
+</div>
+
+<div class="auth-card">
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="alert {{ category }}">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <form action="/register" method="POST">
+
+        <!-- Full Name -->
+        <div class="input-box">
+            <i class="icon-left">👤</i>
+            <input type="text" name="username" placeholder="Full Name" required>
+        </div>
+
+        <!-- Email -->
+        <div class="input-box">
+            <i class="icon-left">✉️</i>
+            <input type="email" name="email" placeholder="Email" required>
+        </div>
+
+        <!-- Password -->
+        <div class="input-box">
+            <i class="icon-left">🔒</i>
+            <input type="password" id="password" name="password" placeholder="Password" required>
+            <i class="icon-right" onclick="togglePass('password')">👁️</i>
+        </div>
+
+        <p class="pass-hint">8-16 chars: Upper, lower, number & special char</p>
+
+        <!-- Confirm Password -->
+        <div class="input-box">
+            <i class="icon-left">🔒</i>
+            <input type="password" id="confirm_password" name="confirm_password" placeholder="Confirm Password" required>
+            <i class="icon-right" onclick="togglePass('confirm_password')">👁️</i>
+        </div>
+
+        <button class="auth-btn">Register</button>
+
+        <p>Already have an account? <a href="/login">Login</a></p>
+    </form>
+</div>
+
+<script>
+function togglePass(id) {
+    let input = document.getElementById(id);
+    input.type = input.type === "password" ? "text" : "password";
+}
+</script>
+
+{% endblock %}

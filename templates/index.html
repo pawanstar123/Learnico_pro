@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+    <title>Learnico</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: "Poppins", Arial, sans-serif;
+            background: #f2f2f2;
+            overflow-x: hidden;
+        }
+
+        /* Top Purple Section */
+        .header-section {
+            background: linear-gradient(135deg, #6c00ff, #8a2bff);
+            height: 260px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border-bottom-left-radius: 40px;
+            border-bottom-right-radius: 40px;
+            padding: 20px;
+        }
+
+        .logo-container {
+            background: white;
+            width: 110px;
+            height: 110px;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.2);
+        }
+
+        .logo-container img {
+            width: 70px;
+            height: 70px;
+        }
+
+        /* Card Section */
+        .card {
+            background: #fff;
+            width: 85%;
+            max-width: 380px;
+            margin: -60px auto 0;
+            padding: 30px;
+            border-radius: 25px;
+            text-align: center;
+            box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .card h2 {
+            font-size: 26px;
+            margin-bottom: 10px;
+            color: #6c00ff;
+        }
+
+        .card p {
+            margin: 0 0 25px 0;
+            color: #666;
+            font-size: 14px;
+        }
+
+        /* Buttons */
+        .btn {
+            width: 100%;
+            padding: 14px;
+            font-size: 18px;
+            border-radius: 30px;
+            border: none;
+            cursor: pointer;
+            margin-bottom: 15px;
+            transition: all 0.3s ease;
+        }
+
+        .btn-login {
+            background: #6c00ff;
+            color: white;
+        }
+
+        .btn-login:hover {
+            background: #5a00d4;
+        }
+
+        .btn-login:active {
+            transform: scale(0.98);
+        }
+
+        .btn-register {
+            background: transparent;
+            border: 2px solid #6c00ff;
+            color: #6c00ff;
+        }
+
+        .btn-register:hover {
+            background: #6c00ff;
+            color: white;
+        }
+
+        .btn-register:active {
+            transform: scale(0.98);
+        }
+
+        .terms {
+            margin-top: 20px;
+            font-size: 12px;
+            color: #777;
+        }
+
+        /* TABLET RESPONSIVE */
+        @media screen and (max-width: 768px) {
+            .header-section {
+                height: 220px;
+                border-bottom-left-radius: 30px;
+                border-bottom-right-radius: 30px;
+            }
+
+            .logo-container {
+                width: 100px;
+                height: 100px;
+            }
+
+            .logo-container img {
+                width: 60px;
+                height: 60px;
+            }
+
+            .card {
+                width: 85%;
+                padding: 25px;
+                margin-top: -50px;
+            }
+
+            .card h2 {
+                font-size: 24px;
+            }
+
+            .card p {
+                font-size: 13px;
+                margin-bottom: 20px;
+            }
+
+            .btn {
+                padding: 13px;
+                font-size: 16px;
+            }
+        }
+
+        /* MOBILE RESPONSIVE */
+        @media screen and (max-width: 480px) {
+            .header-section {
+                height: 200px;
+                border-bottom-left-radius: 25px;
+                border-bottom-right-radius: 25px;
+                padding: 15px;
+            }
+
+            .logo-container {
+                width: 90px;
+                height: 90px;
+            }
+
+            .logo-container img {
+                width: 55px;
+                height: 55px;
+            }
+
+            .card {
+                width: 92%;
+                max-width: none;
+                padding: 22px;
+                margin-top: -45px;
+                border-radius: 20px;
+            }
+
+            .card h2 {
+                font-size: 22px;
+                margin-bottom: 8px;
+            }
+
+            .card p {
+                font-size: 12px;
+                margin-bottom: 18px;
+            }
+
+            .btn {
+                padding: 12px;
+                font-size: 16px;
+                margin-bottom: 12px;
+            }
+
+            .terms {
+                font-size: 11px;
+                margin-top: 15px;
+            }
+        }
+
+        /* EXTRA SMALL MOBILE */
+        @media screen and (max-width: 320px) {
+            .header-section {
+                height: 180px;
+                border-bottom-left-radius: 20px;
+                border-bottom-right-radius: 20px;
+            }
+
+            .logo-container {
+                width: 80px;
+                height: 80px;
+            }
+
+            .logo-container img {
+                width: 50px;
+                height: 50px;
+            }
+
+            .card {
+                width: 95%;
+                padding: 18px;
+                margin-top: -40px;
+            }
+
+            .card h2 {
+                font-size: 20px;
+            }
+
+            .btn {
+                padding: 11px;
+                font-size: 15px;
+            }
+        }
+
+        /* LANDSCAPE MOBILE */
+        @media screen and (max-height: 500px) and (orientation: landscape) {
+            .header-section {
+                height: 150px;
+            }
+
+            .logo-container {
+                width: 70px;
+                height: 70px;
+            }
+
+            .logo-container img {
+                width: 45px;
+                height: 45px;
+            }
+
+            .card {
+                margin-top: -35px;
+                padding: 18px;
+            }
+        }
+
+        /* TOUCH DEVICE OPTIMIZATIONS */
+        @media (hover: none) and (pointer: coarse) {
+            .btn:hover {
+                background: #6c00ff;
+            }
+
+            .btn-register:hover {
+                background: transparent;
+                color: #6c00ff;
+            }
+
+            .btn:active {
+                opacity: 0.8;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Purple Header -->
+    <div class="header-section">
+        <div class="logo-container">
+            <img src="https://cdn-icons-png.flaticon.com/512/4712/4712105.png" alt="Logo">
+        </div>
+    </div>
+
+    <!-- Card -->
+    <div class="card">
+        <h2>Learnico</h2>
+        <p>Learn smarter with interactive lessons and quizzes</p>
+
+        <button class="btn btn-login" onclick="window.location.href='/login'">
+            Login
+        </button>
+
+        <button class="btn btn-register" onclick="window.location.href='/register'">
+            Register
+        </button>
+
+        <div class="terms">
+            By continuing you agree to our Terms
+        </div>
+    </div>
+
+</body>
+</html>

@@ -1,0 +1,47 @@
+{% extends 'app.html' %}
+{% block content %}
+
+<div class="header-section">
+    <h2>Login</h2>
+    <p>Welcome back! Login to continue</p>
+</div>
+
+<div class="auth-card">
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="alert {{ category }}">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <form action="/login" method="POST">
+
+        <!-- Email -->
+        <div class="input-box">
+            <i class="icon-left">✉️</i>
+            <input type="text" name="username" placeholder="Email or Username" required>
+        </div>
+
+        <!-- Password -->
+        <div class="input-box">
+            <i class="icon-left">🔒</i>
+            <input type="password" id="password" name="password" placeholder="Password" required>
+            <i class="icon-right" onclick="togglePass('password')">👁️</i>
+        </div>
+
+        <button class="auth-btn">Login</button>
+
+        <p>Don't have an account? <a href="/register">Register</a></p>
+    </form>
+</div>
+
+<script>
+function togglePass(id) {
+    let input = document.getElementById(id);
+    input.type = input.type === "password" ? "text" : "password";
+}
+</script>
+
+{% endblock %}

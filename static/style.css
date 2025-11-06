@@ -1,0 +1,448 @@
+/* GENERAL */
+body {
+    margin: 0;
+    padding: 0;
+    background: #f2f2f2;
+    font-family: "Poppins", Arial, sans-serif;
+    overflow-x: hidden;
+}
+
+/* TOP HEADER SECTION */
+.header-section {
+    background: linear-gradient(135deg, #6200ff, #8f3dff);
+    height: 240px;
+    border-bottom-left-radius: 40px;
+    border-bottom-right-radius: 40px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    color: white;
+    text-align: center;
+    padding: 20px;
+    box-sizing: border-box;
+}
+
+.header-section h2 {
+    font-size: 28px;
+    font-weight: 600;
+    margin-bottom: 5px;
+}
+
+.header-section p {
+    font-size: 14px;
+    opacity: 0.9;
+}
+
+/* AUTH CARD */
+.auth-card {
+    width: 90%;
+    max-width: 380px;
+    background: white;
+    margin: -60px auto 0 auto;
+    padding: 30px;
+    border-radius: 25px;
+    box-shadow: 0px 6px 25px rgba(0,0,0,0.15);
+    box-sizing: border-box;
+}
+
+/* INPUT GROUP */
+.input-box {
+    position: relative;
+    margin-bottom: 20px;
+}
+
+.input-box input {
+    width: 100%;
+    padding: 15px 45px 15px 50px;
+    border: 2px solid #dcdcdc;
+    border-radius: 14px;
+    outline: none;
+    font-size: 15px;
+    transition: 0.2s;
+    box-sizing: border-box;
+}
+
+.input-box input:focus {
+    border-color: #7a33ff;
+}
+
+/* Left Icon */
+.input-box .icon-left {
+    position: absolute;
+    top: 50%;
+    left: 14px;
+    transform: translateY(-50%);
+    font-size: 20px;
+    color: #7a33ff;
+}
+
+/* Eye Icon (password toggle) */
+.input-box .icon-right {
+    position: absolute;
+    top: 50%;
+    right: 14px;
+    transform: translateY(-50%);
+    font-size: 20px;
+    color: #7a33ff;
+    cursor: pointer;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+/* Small Password Hint */
+.pass-hint {
+    font-size: 11px;
+    color: #777;
+    margin-top: -15px;
+    margin-bottom: 15px;
+}
+
+/* BUTTON */
+.auth-btn {
+    width: 100%;
+    padding: 15px;
+    background: #7a00ff;
+    color: white;
+    border: none;
+    border-radius: 30px;
+    font-size: 18px;
+    cursor: pointer;
+    margin-top: 10px;
+    transition: background 0.3s ease;
+    box-sizing: border-box;
+}
+
+.auth-btn:hover {
+    background: #5c00c7;
+}
+
+.auth-btn:active {
+    transform: scale(0.98);
+}
+
+/* BOTTOM LINK */
+.auth-card p {
+    text-align: center;
+    margin-top: 18px;
+}
+
+.auth-card a {
+    color: #7a00ff;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.auth-card a:hover {
+    text-decoration: underline;
+}
+
+/* FLASH MESSAGES */
+.alert {
+    padding: 10px;
+    border-radius: 10px;
+    text-align: center;
+    margin-bottom: 15px;
+    font-size: 14px;
+    word-wrap: break-word;
+}
+
+.alert.success {
+    background: #d4edda;
+    color: #155724;
+}
+
+.alert.error {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+/* DASHBOARD STYLES */
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+    box-sizing: border-box;
+}
+
+.container h2 {
+    font-size: 32px;
+    color: #6200ff;
+    margin-bottom: 20px;
+}
+
+.container ul {
+    list-style: none;
+    padding: 0;
+    background: white;
+    border-radius: 15px;
+    padding: 25px;
+    box-shadow: 0px 4px 15px rgba(0,0,0,0.1);
+    margin-bottom: 20px;
+}
+
+.container ul li {
+    font-size: 16px;
+    padding: 10px 0;
+    border-bottom: 1px solid #eee;
+    color: #333;
+}
+
+.container ul li:last-child {
+    border-bottom: none;
+}
+
+.btn {
+    display: inline-block;
+    padding: 12px 30px;
+    border-radius: 25px;
+    text-decoration: none;
+    font-size: 16px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    border: none;
+}
+
+.btn-dark {
+    background: #7a00ff;
+    color: white;
+}
+
+.btn-dark:hover {
+    background: #5c00c7;
+    transform: translateY(-2px);
+    box-shadow: 0px 4px 12px rgba(122, 0, 255, 0.3);
+}
+
+/* RESPONSIVE DESIGN - TABLET */
+@media screen and (max-width: 768px) {
+    .header-section {
+        height: 200px;
+        border-bottom-left-radius: 30px;
+        border-bottom-right-radius: 30px;
+        padding: 15px;
+    }
+
+    .header-section h2 {
+        font-size: 24px;
+    }
+
+    .header-section p {
+        font-size: 13px;
+    }
+
+    .auth-card {
+        width: 85%;
+        padding: 25px;
+        margin-top: -50px;
+    }
+
+    .input-box input {
+        padding: 14px 40px 14px 45px;
+        font-size: 14px;
+    }
+
+    .auth-btn {
+        padding: 14px;
+        font-size: 16px;
+    }
+
+    .container h2 {
+        font-size: 28px;
+    }
+
+    .container {
+        padding: 15px;
+    }
+}
+
+/* RESPONSIVE DESIGN - MOBILE */
+@media screen and (max-width: 480px) {
+    body {
+        font-size: 14px;
+    }
+
+    .header-section {
+        height: 180px;
+        border-bottom-left-radius: 25px;
+        border-bottom-right-radius: 25px;
+        padding: 10px;
+    }
+
+    .header-section h2 {
+        font-size: 22px;
+        margin-bottom: 8px;
+    }
+
+    .header-section p {
+        font-size: 12px;
+        padding: 0 10px;
+    }
+
+    .auth-card {
+        width: 92%;
+        max-width: none;
+        padding: 20px;
+        margin-top: -45px;
+        border-radius: 20px;
+    }
+
+    .input-box {
+        margin-bottom: 18px;
+    }
+
+    .input-box input {
+        padding: 12px 35px 12px 40px;
+        font-size: 14px;
+        border-radius: 12px;
+    }
+
+    .input-box .icon-left {
+        left: 12px;
+        font-size: 18px;
+    }
+
+    .input-box .icon-right {
+        right: 12px;
+        font-size: 18px;
+    }
+
+    .pass-hint {
+        font-size: 10px;
+        margin-top: -12px;
+        margin-bottom: 12px;
+    }
+
+    .auth-btn {
+        padding: 13px;
+        font-size: 16px;
+        border-radius: 25px;
+    }
+
+    .auth-card p {
+        font-size: 13px;
+        margin-top: 15px;
+    }
+
+    .alert {
+        padding: 8px;
+        font-size: 12px;
+        border-radius: 8px;
+        margin-bottom: 12px;
+    }
+
+    .container {
+        padding: 12px;
+    }
+
+    .container h2 {
+        font-size: 24px;
+        margin-bottom: 15px;
+    }
+
+    .container ul {
+        padding: 20px;
+        border-radius: 12px;
+    }
+
+    .container ul li {
+        font-size: 14px;
+        padding: 8px 0;
+    }
+
+    .btn {
+        padding: 11px 25px;
+        font-size: 14px;
+        width: 100%;
+        text-align: center;
+        box-sizing: border-box;
+    }
+}
+
+/* RESPONSIVE DESIGN - EXTRA SMALL MOBILE */
+@media screen and (max-width: 320px) {
+    .header-section {
+        height: 160px;
+        border-bottom-left-radius: 20px;
+        border-bottom-right-radius: 20px;
+    }
+
+    .header-section h2 {
+        font-size: 20px;
+    }
+
+    .header-section p {
+        font-size: 11px;
+    }
+
+    .auth-card {
+        width: 95%;
+        padding: 18px;
+        margin-top: -40px;
+    }
+
+    .input-box input {
+        padding: 11px 30px 11px 35px;
+        font-size: 13px;
+    }
+
+    .auth-btn {
+        padding: 12px;
+        font-size: 15px;
+    }
+
+    .container h2 {
+        font-size: 22px;
+    }
+}
+
+/* RESPONSIVE DESIGN - LARGE DESKTOP */
+@media screen and (min-width: 1200px) {
+    .auth-card {
+        max-width: 420px;
+        padding: 35px;
+    }
+
+    .header-section {
+        height: 260px;
+    }
+
+    .header-section h2 {
+        font-size: 32px;
+    }
+
+    .header-section p {
+        font-size: 16px;
+    }
+}
+
+/* TOUCH DEVICE OPTIMIZATIONS */
+@media (hover: none) and (pointer: coarse) {
+    .auth-btn:hover {
+        background: #7a00ff;
+    }
+
+    .auth-btn:active {
+        background: #5c00c7;
+    }
+
+    .input-box input {
+        font-size: 16px; /* Prevents zoom on iOS */
+    }
+}
+
+/* LANDSCAPE ORIENTATION FOR MOBILE */
+@media screen and (max-height: 500px) and (orientation: landscape) {
+    .header-section {
+        height: 140px;
+    }
+
+    .auth-card {
+        margin-top: -35px;
+        padding: 18px;
+    }
+
+    .input-box {
+        margin-bottom: 12px;
+    }
+}
