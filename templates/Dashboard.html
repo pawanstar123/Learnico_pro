@@ -1,16 +1,63 @@
 {% extends 'app.html' %}
 {% block content %}
-    <div class="container">
-    <h2>Welcome to the Dashboard</h2>
 
-    {% if user %}
-        <p>User Information:</p>
-        <ul>
-            <li>Name: {{ user[1] }}</li>
-            <li>Email: {{ user[2] }}</li>
-        </ul>
-
-        <a href="/logout" class="btn btn-dark">Logout</a>
-    {% endif %}
+<div class="header-section">
+    <nav class="dashboard-navbar">
+        <div class="nav-brand">Game Hub</div>
+        <div class="nav-links">
+            <a href="/Dashboard" class="nav-link">Home</a>
+            <a href="/quiz" class="nav-link">Quiz</a>
+            <a href="/leaderboard" class="nav-link">Leaderboard</a>
+            <a href="/profile" class="nav-link profile-icon" title="Profile">👤</a>
+            <a href="/logout" class="nav-link">Logout</a>
+        </div>
+    </nav>
 </div>
+
+<div class="container" style="margin-top: 0;">
+    <h2 style="color: #6200ff; margin-bottom: 8px; font-size: 28px;">Game Hub</h2>
+    <p style="color: #666; margin-bottom: 20px; font-size: 14px;">Level up your skills. Earn points. Unlock achievements.</p>
+    {% if user %}
+        <p style="margin: 10px 0 24px; color:#444">Welcome, <strong>{{ user[1] }}</strong>!</p>
+    {% endif %}
+
+    <!-- Heads-up display (HUD) -->
+    <div class="hud">
+        <div class="badge score">Rating: <span>{{ user[4] if user[4] else 1000 }}</span></div>
+        <div class="badge level">Matches: <span>{{ user[5] if user[5] else 0 }}</span></div>
+        <div class="badge streak">Wins: <span>{{ user[6] if user[6] else 0 }}</span> 🏆</div>
+    </div>
+
+    <!-- Game Cards -->
+    <div class="game-grid">
+        <div class="game-card">
+            <div class="card-icon">⚔️</div>
+            <h3>Quiz Battle</h3>
+            <p>Challenge players in 1v1 quiz matches.</p>
+            <a class="btn btn-dark" href="/quiz">Play Now</a>
+        </div>
+
+        <div class="game-card">
+            <div class="card-icon">🏆</div>
+            <h3>Leaderboard</h3>
+            <p>View top players and rankings.</p>
+            <a class="btn btn-dark" href="/leaderboard">View</a>
+        </div>
+
+        <div class="game-card">
+            <div class="card-icon">👤</div>
+            <h3>Your Profile</h3>
+            <p>View stats and update your profile.</p>
+            <a class="btn btn-dark" href="/profile">Profile</a>
+        </div>
+
+        <div class="game-card">
+            <div class="card-icon">📊</div>
+            <h3>Your Stats</h3>
+            <p>Total XP: {{ user[7] if user[7] else 0 }}</p>
+            <a class="btn btn-outline" href="/profile">Details</a>
+        </div>
+    </div>
+</div>
+
 {% endblock %}

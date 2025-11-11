@@ -1,0 +1,161 @@
+{% extends 'app.html' %}
+{% block content %}
+
+<div class="header-section">
+</div>
+
+<div class="auth-card profile-wrap">
+    <h2 style="text-align: center; color: #6200ff; margin-bottom: 8px; font-size: 24px;">Profile</h2>
+    <p style="text-align: center; color: #666; margin-bottom: 20px; font-size: 14px;">View and update your player
+        details</p>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    {% for category, message in messages %}
+    <div class="alert {{ category }}">{{ message }}</div>
+    {% endfor %}
+    {% endif %}
+    {% endwith %}
+
+    {% if user %}
+    <!-- Hero banner with rank and XP -->
+    <div class="profile-hero">
+        <div class="cover"></div>
+        <div class="hero-content">
+            {% set elo = user[4] if user[4] else 1000 %}
+            {% if elo >= 1500 %}
+            <div class="rank-badge rank-gold" title="Current Rank">Gold</div>
+            {% elif elo >= 1200 %}
+            <div class="rank-badge rank-silver" title="Current Rank">Silver</div>
+            {% else %}
+            <div class="rank-badge rank-bronze" title="Current Rank">Bronze</div>
+            {% endif %}
+            <div class="hero-main">
+                <div class="hero-name">{{ user[1] }}</div>
+                <div class="hero-id">ID: {{ user[0] }} | Rating: {{ elo }}</div>
+            </div>
+            <div class="xp">
+                <div class="xp-top">
+                    <span>XP</span>
+                    {% set current_xp = user[7] if user[7] else 0 %}
+                    {% set next_level_xp = ((current_xp // 1000) + 1) * 1000 %}
+                    {% set xp_progress = ((current_xp % 1000) / 1000 * 100) | int %}
+                    <span class="xp-value">{{ current_xp }} / {{ next_level_xp }}</span>
+                </div>
+                <div class="xp-bar"><span class="xp-progress" data-progress="{{ xp_progress }}"></span></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="profile-grid">
+        <!-- Left: Avatar + Actions -->
+        <div class="profile-left">
+            <div class="avatar-ring">
+                <img src="{{ url_for('static', filename=avatar_filename) if avatar_filename else 'https://via.placeholder.com/160?text=🙂' }}"
+                    alt="Avatar">
+            </div>
+            <div class="gallery-icon-container">
+                <button class="gallery-icon" onclick="document.getElementById('avatar-input').click()">
+                    <i class="gallery-icon-symbol">🖼️</i>
+                </button>
+            </div>
+            <form action="/profile" method="POST" enctype="multipart/form-data" class="profile-upload"
+                style="display: none;">
+                <input type="hidden" name="name" value="{{ user[1] }}">
+                <input type="file" id="avatar-input" name="avatar" accept="image/*" onchange="this.form.submit()">
+            </form>
+        </div>
+
+        <!-- Right: Details + Forms -->
+        <div class="profile-right">
+            <div class="pill-row">
+                <span class="pill">Player ID: <strong id="playerIdText">{{ user[0] }}</strong></span>
+                <button class="pill-btn" type="button" onclick="copyPlayerId()">Copy</button>
+            </div>
+
+            <div class="detail-box">
+                <div class="detail">
+                    <div class="label">Email</div>
+                    <div class="value">{{ user[2] }}</div>
+                </div>
+            </div>
+
+            <form action="/profile" method="POST" class="profile-form">
+                <div class="input-box">
+                    <i class="icon-left">👤</i>
+                    <input type="text" name="name" value="{{ user[1] }}" placeholder="Display name" required>
+                </div>
+                <button class="auth-btn" type="submit">Save Changes</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Stats cards -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-label">Matches</div>
+            <div class="stat-value">{{ user[5] if user[5] else 0 }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Wins</div>
+            <div class="stat-value">{{ user[6] if user[6] else 0 }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Win Rate</div>
+            {% set matches = user[5] if user[5] else 0 %}
+            {% set wins = user[6] if user[6] else 0 %}
+            {% set win_rate = ((wins / matches * 100) | int) if matches > 0 else 0 %}
+            <div class="stat-value">{{ win_rate }}%</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Total XP</div>
+            <div class="stat-value">{{ "{:,}".format(user[7]) if user[7] else 0 }}</div>
+        </div>
+    </div>
+    {% endif %}
+
+    <p style="margin-top:18px;text-align:center">
+        <a href="/Dashboard">Back to Dashboard</a>
+    </p>
+</div>
+
+<script>
+    function copyPlayerId() {
+        const idText = document.getElementById('playerIdText').textContent;
+        if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard.writeText(idText);
+        } else {
+            const ta = document.createElement('textarea');
+            ta.value = idText;
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+        }
+    }
+
+    // Set XP progress bar width
+    document.addEventListener('DOMContentLoaded', function () {
+        const xpBar = document.querySelector('.xp-progress');
+        if (xpBar) {
+            const progress = xpBar.getAttribute('data-progress');
+            xpBar.style.width = progress + '%';
+        }
+    });
+</script>
+
+<style>
+    .rank-gold {
+        background: linear-gradient(135deg, #FFD700, #FFA500) !important;
+    }
+
+    .rank-silver {
+        background: linear-gradient(135deg, #C0C0C0, #A8A8A8) !important;
+    }
+
+    .rank-bronze {
+        background: linear-gradient(135deg, #c48f5a, #9b6a38) !important;
+    }
+</style>
+
+{% endblock %}

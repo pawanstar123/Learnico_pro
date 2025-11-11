@@ -1,0 +1,216 @@
+{% extends 'app.html' %}
+{% block content %}
+
+<div class="results-container">
+    <div class="results-card">
+        <h1 class="results-title">
+            {% if match[8] == user_id %}
+                🏆 Victory!
+            {% elif match[8] == None %}
+                🤝 Draw!
+            {% else %}
+                😔 Defeat
+            {% endif %}
+        </h1>
+
+        <div class="match-summary">
+            <div class="player-result {% if match[1] == user_id %}current-player{% endif %}">
+                <div class="player-name">{{ match[11] }}</div>
+                <div class="player-score">{{ match[3] }}</div>
+                <div class="elo-change">
+                    {% set elo_diff = match[9] - match[5] %}
+                    <span class="{% if elo_diff > 0 %}elo-up{% else %}elo-down{% endif %}">
+                        {{ '+' if elo_diff > 0 else '' }}{{ elo_diff }}
+                    </span>
+                    <div class="elo-rating">{{ match[9] }} ELO</div>
+                </div>
+            </div>
+
+            <div class="vs-divider">VS</div>
+
+            <div class="player-result {% if match[2] == user_id %}current-player{% endif %}">
+                <div class="player-name">{{ match[12] }}</div>
+                <div class="player-score">{{ match[4] }}</div>
+                <div class="elo-change">
+                    {% set elo_diff = match[10] - match[6] %}
+                    <span class="{% if elo_diff > 0 %}elo-up{% else %}elo-down{% endif %}">
+                        {{ '+' if elo_diff > 0 else '' }}{{ elo_diff }}
+                    </span>
+                    <div class="elo-rating">{{ match[10] }} ELO</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="xp-earned">
+            <div class="xp-icon">✨</div>
+            <div class="xp-text">
+                {% if match[1] == user_id %}
+                    +{{ match[3] * 10 }} XP Earned
+                {% else %}
+                    +{{ match[4] * 10 }} XP Earned
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="results-actions">
+            <a href="/quiz" class="btn btn-dark">Play Again</a>
+            <a href="/leaderboard" class="btn btn-outline">View Leaderboard</a>
+            <a href="/Dashboard" class="btn btn-outline">Dashboard</a>
+        </div>
+    </div>
+</div>
+
+<style>
+.results-container {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.results-card {
+    background: white;
+    border-radius: 30px;
+    padding: 50px;
+    max-width: 700px;
+    width: 100%;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    text-align: center;
+}
+
+.results-title {
+    font-size: 48px;
+    margin: 0 0 40px 0;
+    color: #6200ff;
+}
+
+.match-summary {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 30px;
+    align-items: center;
+    margin-bottom: 40px;
+}
+
+.player-result {
+    background: #f8f8f8;
+    padding: 30px;
+    border-radius: 20px;
+    border: 3px solid transparent;
+}
+
+.player-result.current-player {
+    border-color: #7a00ff;
+    background: #f0f0ff;
+}
+
+.player-name {
+    font-size: 20px;
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 15px;
+}
+
+.player-score {
+    font-size: 48px;
+    font-weight: 800;
+    color: #6200ff;
+    margin-bottom: 15px;
+}
+
+.elo-change {
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.elo-up {
+    color: #28a745;
+}
+
+.elo-down {
+    color: #dc3545;
+}
+
+.elo-rating {
+    font-size: 14px;
+    color: #666;
+    margin-top: 5px;
+}
+
+.vs-divider {
+    font-size: 24px;
+    font-weight: 800;
+    color: #999;
+}
+
+.xp-earned {
+    background: linear-gradient(135deg, #ffd700, #ffed4e);
+    padding: 20px;
+    border-radius: 15px;
+    margin-bottom: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 15px;
+}
+
+.xp-icon {
+    font-size: 36px;
+}
+
+.xp-text {
+    font-size: 24px;
+    font-weight: 700;
+    color: #333;
+}
+
+.results-actions {
+    display: flex;
+    gap: 15px;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.results-actions .btn {
+    min-width: 150px;
+}
+
+@media screen and (max-width: 768px) {
+    .results-card {
+        padding: 30px 20px;
+    }
+    
+    .results-title {
+        font-size: 36px;
+    }
+    
+    .match-summary {
+        grid-template-columns: 1fr;
+        gap: 20px;
+    }
+    
+    .vs-divider {
+        transform: rotate(90deg);
+    }
+    
+    .player-score {
+        font-size: 36px;
+    }
+    
+    .xp-text {
+        font-size: 18px;
+    }
+    
+    .results-actions {
+        flex-direction: column;
+    }
+    
+    .results-actions .btn {
+        width: 100%;
+    }
+}
+</style>
+
+{% endblock %}

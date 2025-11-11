@@ -1,0 +1,335 @@
+{% extends 'app.html' %}
+{% block content %}
+
+<div class="quiz-match-container">
+    <div class="match-header">
+        <div class="timer" id="timer">⏱️ 30</div>
+        <div class="question-counter">
+            <span id="current-q">1</span> / <span id="total-q">{{ questions|length }}</span>
+        </div>
+        <div class="score">Score: <span id="score">0</span></div>
+    </div>
+
+    <div class="question-container" id="question-container">
+        <!-- Questions will be loaded here -->
+    </div>
+
+    <div class="match-complete" id="match-complete" style="display:none;">
+        <h2>Match Complete! 🎉</h2>
+        <p>Calculating results...</p>
+        <div class="loading-spinner">🔄</div>
+    </div>
+</div>
+
+<script id="quiz-data" type="application/json">
+{{ questions | tojson | safe }}
+</script>
+
+<script>
+    // Load quiz data from JSON script tag
+    const questionsData = JSON.parse(document.getElementById('quiz-data').textContent);
+    const matchId = parseInt('{{ match_id }}');
+    
+    // Quiz state
+    let currentQuestion = 0;
+    let score = 0;
+    let timer;
+    let timeLeft = 30;
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    function loadQuestion() {
+        if (currentQuestion >= questionsData.length) {
+            completeMatch();
+            return;
+        }
+
+        const q = questionsData[currentQuestion];
+        const container = document.getElementById('question-container');
+
+        container.innerHTML = `
+        <div class="question-card">
+            <h3 class="question-text">${escapeHtml(q.question)}</h3>
+            <div class="options">
+                <button class="option-btn" onclick="selectAnswer('a', ${q.id})">
+                    <span class="option-letter">A</span> ${escapeHtml(q.option_a)}
+                </button>
+                <button class="option-btn" onclick="selectAnswer('b', ${q.id})">
+                    <span class="option-letter">B</span> ${escapeHtml(q.option_b)}
+                </button>
+                <button class="option-btn" onclick="selectAnswer('c', ${q.id})">
+                    <span class="option-letter">C</span> ${escapeHtml(q.option_c)}
+                </button>
+                <button class="option-btn" onclick="selectAnswer('d', ${q.id})">
+                    <span class="option-letter">D</span> ${escapeHtml(q.option_d)}
+                </button>
+            </div>
+        </div>
+    `;
+
+        document.getElementById('current-q').textContent = currentQuestion + 1;
+        startTimer();
+    }
+
+    function startTimer() {
+        timeLeft = 30;
+        updateTimer();
+
+        timer = setInterval(() => {
+            timeLeft--;
+            updateTimer();
+
+            if (timeLeft <= 0) {
+                clearInterval(timer);
+                selectAnswer(null, questionsData[currentQuestion].id);
+            }
+        }, 1000);
+    }
+
+    function updateTimer() {
+        const timerEl = document.getElementById('timer');
+        timerEl.textContent = `⏱️ ${timeLeft}`;
+
+        if (timeLeft <= 10) {
+            timerEl.style.color = '#ff4444';
+        } else {
+            timerEl.style.color = '#333';
+        }
+    }
+
+    function selectAnswer(answer, questionId) {
+        clearInterval(timer);
+
+        const buttons = document.querySelectorAll('.option-btn');
+        buttons.forEach(btn => btn.disabled = true);
+
+        fetch('/quiz/submit_answer', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                match_id: matchId,
+                question_id: questionId,
+                answer: answer || ''
+            })
+        })
+            .then(res => res.json())
+            .then(data => {
+                if (data.correct) {
+                    score++;
+                    document.getElementById('score').textContent = score;
+                }
+
+                // Highlight correct/wrong answers
+                buttons.forEach(btn => {
+                    const letter = btn.querySelector('.option-letter').textContent.toLowerCase();
+                    if (letter === data.correct_answer.toLowerCase()) {
+                        btn.classList.add('correct');
+                    } else if (answer && letter === answer.toLowerCase()) {
+                        btn.classList.add('wrong');
+                    }
+                });
+
+                setTimeout(() => {
+                    currentQuestion++;
+                    loadQuestion();
+                }, 2000);
+            })
+            .catch(err => {
+                console.error('Error:', err);
+                currentQuestion++;
+                loadQuestion();
+            });
+    }
+
+    function completeMatch() {
+        document.getElementById('question-container').style.display = 'none';
+        document.getElementById('match-complete').style.display = 'block';
+
+        fetch(`/quiz/complete_match/${matchId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        })
+            .then(res => res.json())
+            .then(data => {
+                setTimeout(() => {
+                    window.location.href = `/quiz/results/${matchId}`;
+                }, 2000);
+            })
+            .catch(err => {
+                console.error('Error:', err);
+                alert('Error completing match');
+            });
+    }
+
+    // Start the quiz
+    loadQuestion();
+</script>
+
+<style>
+    .quiz-match-container {
+        max-width: 900px;
+        margin: 20px auto;
+        padding: 20px;
+    }
+
+    .match-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: white;
+        padding: 20px;
+        border-radius: 15px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        margin-bottom: 20px;
+        font-size: 18px;
+        font-weight: 600;
+    }
+
+    .timer {
+        color: #333;
+        font-size: 24px;
+    }
+
+    .question-card {
+        background: white;
+        padding: 40px;
+        border-radius: 20px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    }
+
+    .question-text {
+        font-size: 24px;
+        color: #333;
+        margin-bottom: 30px;
+        line-height: 1.4;
+    }
+
+    .options {
+        display: grid;
+        gap: 15px;
+    }
+
+    .option-btn {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        padding: 20px;
+        background: #f8f8f8;
+        border: 3px solid #e0e0e0;
+        border-radius: 15px;
+        font-size: 16px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        text-align: left;
+    }
+
+    .option-btn:hover:not(:disabled) {
+        background: #f0f0ff;
+        border-color: #7a00ff;
+        transform: translateX(5px);
+    }
+
+    .option-letter {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 40px;
+        height: 40px;
+        background: #7a00ff;
+        color: white;
+        border-radius: 50%;
+        font-weight: 700;
+        flex-shrink: 0;
+    }
+
+    .option-btn.correct {
+        background: #d4edda;
+        border-color: #28a745;
+    }
+
+    .option-btn.correct .option-letter {
+        background: #28a745;
+    }
+
+    .option-btn.wrong {
+        background: #f8d7da;
+        border-color: #dc3545;
+    }
+
+    .option-btn.wrong .option-letter {
+        background: #dc3545;
+    }
+
+    .option-btn:disabled {
+        cursor: not-allowed;
+        opacity: 0.7;
+    }
+
+    .match-complete {
+        text-align: center;
+        background: white;
+        padding: 60px;
+        border-radius: 20px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    }
+
+    .match-complete h2 {
+        color: #6200ff;
+        margin-bottom: 20px;
+    }
+
+    .loading-spinner {
+        font-size: 48px;
+        animation: spin 2s linear infinite;
+        margin-top: 20px;
+    }
+
+    @keyframes spin {
+        0% {
+            transform: rotate(0deg);
+        }
+
+        100% {
+            transform: rotate(360deg);
+        }
+    }
+
+    @media screen and (max-width: 768px) {
+        .quiz-match-container {
+            padding: 10px;
+        }
+
+        .match-header {
+            font-size: 14px;
+            padding: 15px;
+        }
+
+        .timer {
+            font-size: 18px;
+        }
+
+        .question-card {
+            padding: 25px;
+        }
+
+        .question-text {
+            font-size: 18px;
+        }
+
+        .option-btn {
+            padding: 15px;
+            font-size: 14px;
+        }
+
+        .option-letter {
+            width: 35px;
+            height: 35px;
+        }
+    }
+</style>
+
+{% endblock %}
