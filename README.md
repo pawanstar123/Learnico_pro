@@ -1,203 +1,300 @@
-# 🎮 Quiz Battle Arena
+# Quiz System with ELO Rating & Unique Questions
 
-A competitive two-player quiz game with ELO rating system, real-time matchmaking, and global leaderboards.
+A competitive quiz application with user authentication, ELO-based matchmaking, and unique question tracking.
 
-## ✨ Features
+## Features
 
-- ✅ **Two-Player Quiz System** - Challenge other players in real-time
-- ✅ **ELO Rating Calculator** - Fair skill-based ranking system
-- ✅ **Player Ratings** - Track your progress and skill level
-- ✅ **Matchmaking** - Automatic opponent matching based on ELO
-- ✅ **Match System** - Complete match flow with scoring
-- ✅ **Leaderboard** - Global rankings and statistics
-- ✅ **XP System** - Earn experience points for playing
-- ✅ **Profile Management** - Avatar upload and stats tracking
-- ✅ **RESTful API** - Full API for player stats and leaderboard
+### ✅ User Authentication
+- Registration with email validation
+- Secure login with bcrypt password hashing
+- Profile management with avatar upload
+- Session-based authentication
 
-## 🚀 Quick Start
+### ✅ Quiz System
+- **Mathematics Questions Only** - All questions from Science: Mathematics category
+- **Unique Questions** - Never see the same question twice in the same difficulty
+- **Three Difficulty Levels**:
+  - Easy: Below 6th standard (Basic math)
+  - Medium: 6-8th standard (Moderate math)
+  - Hard: 9-12th standard (Advanced math)
+- **API Integration** - Questions from Open Trivia Database
+- **Fallback Questions** - 10 basic math questions if API fails
 
-### 1. Install Dependencies
+### ✅ Competitive Features
+- **ELO Rating System** - Skill-based ranking (starts at 1000)
+- **Matchmaking** - Paired with opponents of similar skill level
+- **Match History** - Track all your matches and results
+- **Leaderboard** - See top players ranked by ELO
+- **Statistics** - Matches played, won, total XP
+
+### ✅ Question Uniqueness
+- Tracks every question shown to each user
+- Filters out previously seen questions
+- Separate tracking per difficulty level
+- ~50 mathematics questions available
+- Questions saved to `user_question_history` table
+
+## Tech Stack
+
+- **Backend**: Flask (Python)
+- **Database**: MySQL
+- **Authentication**: Flask-Session, bcrypt
+- **API**: Open Trivia Database
+- **Frontend**: HTML, CSS, JavaScript
+
+## Installation
+
+### Prerequisites
+- Python 3.7+
+- MySQL Server
+- Internet connection (for API)
+
+### Setup
+
+1. **Clone the repository**
+```bash
+git clone <your-repo-url>
+cd <project-folder>
+```
+
+2. **Install dependencies**
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. Setup Database
-Make sure MySQL is running, then:
-```bash
-python setup_database.py
-```
-
-### 3. Run the Application
-```bash
-python app.py
-```
-
-Visit `http://localhost:5000` in your browser.
-
-## 📋 Requirements
-
-- Python 3.8+
-- MySQL 5.7+ or MariaDB
-- Flask and dependencies (see requirements.txt)
-
-## 🎯 How to Play
-
-1. **Register/Login** - Create an account or login
-2. **Go to Quiz** - Click "Quiz Battle" from dashboard
-3. **Find Match** - System finds an opponent with similar ELO
-4. **Answer Questions** - 10 questions, 30 seconds each
-5. **View Results** - See your score and ELO changes
-6. **Check Leaderboard** - See where you rank globally
-
-## 🏆 ELO Rating System
-
-- Starting ELO: 1000
-- Win against higher-rated player: Gain more points
-- Win against lower-rated player: Gain fewer points
-- Lose: Lose points based on opponent's rating
-- Draw: Minimal ELO change
-
-## 📊 API Endpoints
-
-### Get Player Stats
-```
-GET /api/player/<player_id>
-```
-
-Response:
-```json
-{
-  "id": 1,
-  "name": "Player Name",
-  "elo_rating": 1250,
-  "matches_played": 15,
-  "matches_won": 9,
-  "total_xp": 1200,
-  "win_rate": 60.0
-}
-```
-
-### Get Leaderboard
-```
-GET /api/leaderboard
-```
-
-Response:
-```json
-[
-  {
-    "rank": 1,
-    "id": 5,
-    "name": "Top Player",
-    "elo_rating": 1500,
-    "matches_played": 50,
-    "matches_won": 35,
-    "total_xp": 5000,
-    "win_rate": 70.0
-  }
-]
-```
-
-## 🗂️ Project Structure
-
-```
-sec pro/
-├── app.py                  # Main Flask application
-├── setup_database.py       # Database setup script
-├── database_schema.sql     # SQL schema
-├── requirements.txt        # Python dependencies
-├── DEPLOYMENT_GUIDE.md     # Deployment instructions
-├── static/
-│   ├── style.css          # Styles
-│   └── avatars/           # User avatars
-└── templates/
-    ├── app.html           # Base template
-    ├── Dashboard.html     # Main dashboard
-    ├── quiz_home.html     # Quiz home page
-    ├── quiz_match.html    # Quiz gameplay
-    ├── match_results.html # Match results
-    ├── leaderboard.html   # Leaderboard
-    ├── profile.html       # User profile
-    ├── login.html         # Login page
-    └── register.html      # Registration page
-```
-
-## 🔧 Configuration
-
-Edit `app.py` to configure:
-
+3. **Configure database**
+Edit `app.py` with your MySQL credentials:
 ```python
 app.config['MYSQL_HOST'] = 'localhost'
 app.config['MYSQL_USER'] = 'root'
 app.config['MYSQL_PASSWORD'] = 'your_password'
 app.config['MYSQL_DB'] = 'mydatabase'
-app.secret_key = 'your-secret-key-here'
 ```
 
-## 🌐 Deployment
-
-See [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) for detailed deployment instructions for:
-- Heroku
-- PythonAnywhere
-- DigitalOcean/AWS/VPS
-
-## 🎨 Customization
-
-### Add More Questions
-Edit `setup_database.py` or insert directly into `quiz_questions` table:
-
-```sql
-INSERT INTO quiz_questions 
-(question, option_a, option_b, option_c, option_d, correct_answer, difficulty, category)
-VALUES 
-('Your question?', 'Option A', 'Option B', 'Option C', 'Option D', 'c', 'medium', 'Category');
-```
-
-### Adjust ELO K-Factor
-In `app.py`, modify the `calculate_elo` function:
-
-```python
-def calculate_elo(winner_rating, loser_rating, k_factor=32):
-    # Increase k_factor for more volatile ratings
-    # Decrease k_factor for more stable ratings
-```
-
-## 🐛 Troubleshooting
-
-### Database Connection Error
+4. **Create database**
 ```bash
-# Check MySQL is running
 mysql -u root -p
-
-# Verify database exists
-SHOW DATABASES;
+CREATE DATABASE mydatabase;
+EXIT;
 ```
 
-### Module Not Found
+5. **Setup tables**
 ```bash
-# Reinstall dependencies
-pip install -r requirements.txt
+mysql -u root -p mydatabase < database_schema.sql
+mysql -u root -p mydatabase < fix_elo_types.sql
 ```
 
-### Port Already in Use
+OR use the admin setup (in debug mode):
+```
+http://localhost:5000/admin/setup-database
+```
+
+6. **Run the application**
+```bash
+python app.py
+```
+
+7. **Access the app**
+```
+http://localhost:5000
+```
+
+## Database Schema
+
+### Tables
+- **users** - User accounts, ELO ratings, statistics
+- **matches** - Match records with scores and ELO changes
+- **match_answers** - Individual question answers per match
+- **user_question_history** - Tracks shown questions for uniqueness
+
+## How It Works
+
+### Question Flow
+1. User starts a match with selected difficulty
+2. System fetches 20 math questions from API
+3. Filters out questions user has seen before
+4. Selects 10 unique questions
+5. Saves question hashes to history
+6. Displays questions to user
+7. Tracks answers and calculates score
+
+### ELO System
+- Winner gains points, loser loses points
+- Amount depends on rating difference
+- K-factor: 32 (standard chess rating)
+- Formula: `new_rating = old_rating + K * (actual - expected)`
+
+### Matchmaking
+- Finds opponent with similar ELO rating
+- Uses absolute difference: `ABS(your_elo - opponent_elo)`
+- Closest match is selected
+- Creates match with status 'in_progress'
+
+## API Details
+
+### Open Trivia Database
+- **Endpoint**: `https://opentdb.com/api.php`
+- **Category**: 19 (Science: Mathematics)
+- **Type**: Multiple choice
+- **Amount**: 20 questions per request
+- **Rate Limit**: 1 request per 5 seconds (handled automatically)
+
+### Fallback Questions
+If API fails, system uses 10 basic math questions:
+- Addition, subtraction, multiplication, division
+- Simple arithmetic suitable for all levels
+
+## Configuration
+
+### Difficulty Mapping
 ```python
-# Change port in app.py
-if __name__=='__main__':
-    app.run(debug=True, port=5001)
+'easy': 'easy'      # Below 6th standard
+'medium': 'medium'  # 6-8th standard
+'hard': 'hard'      # 9-12th standard
 ```
 
-## 📝 License
+### File Upload
+- **Avatar folder**: `static/avatars/`
+- **Allowed formats**: PNG, JPG, JPEG, GIF, WEBP
+- **Naming**: `{user_id}.{extension}`
 
-This project is open source and available for educational purposes.
+## Admin Endpoints
 
-## 🤝 Contributing
+(Only available in debug mode)
 
-Feel free to fork, modify, and submit pull requests!
+- `/admin/setup-database` - Create all tables
+- `/admin/fix-null-elo` - Fix NULL ELO values
+- `/admin/test-api` - Test API integration
+- `/admin/system-info` - View system information
 
-## 📧 Support
+## API Endpoints
 
-For issues or questions, please check the troubleshooting section in DEPLOYMENT_GUIDE.md
+- `GET /api/player/<id>` - Get player statistics
+- `GET /api/leaderboard` - Get top players
+- `GET /api/quiz/questions` - Fetch quiz questions
+- `GET /api/quiz/categories` - Get available categories
+
+## Troubleshooting
+
+### Questions Repeating / Not Unique
+**Solution**: Restart Flask after any code changes
+```bash
+# Stop Flask (Ctrl+C)
+python app.py
+```
+
+The system has extensive debug logging. After restart, you'll see:
+```
+===== FILTERING DEBUG =====
+User ID: X
+Questions in history: Y
+===========================
+>>> SKIPPING: hash... (already in history)
+>>> KEEPING: hash... (new question)
+```
+
+### API Returns 0 Questions
+**Solution**: Check internet connection and restart Flask
+```bash
+# Stop Flask (Ctrl+C)
+python app.py
+```
+
+### ELO Type Errors
+**Solution**: Run the fix script
+```bash
+mysql -u root -p mydatabase < fix_elo_types.sql
+```
+
+### Questions Not Saving to History
+**Solution**: Check if table exists
+```sql
+SHOW TABLES LIKE 'user_question_history';
+```
+
+If missing, run:
+```bash
+mysql -u root -p mydatabase < database_schema.sql
+```
+
+### Important Note
+**Always restart Flask after making any code changes!** Flask does not automatically reload code.
+
+## Project Structure
+
+```
+project/
+├── app.py                  # Main Flask application
+├── database_schema.sql     # Database schema
+├── fix_elo_types.sql      # ELO type fixes
+├── requirements.txt        # Python dependencies
+├── README.md              # This file
+├── static/
+│   ├── avatars/           # User avatars
+│   └── style.css          # Styles
+└── templates/
+    ├── index.html         # Home page
+    ├── register.html      # Registration
+    ├── login.html         # Login
+    ├── Dashboard.html     # User dashboard
+    ├── profile.html       # User profile
+    ├── quiz_home.html     # Quiz home
+    ├── matchmaking.html   # Find opponent
+    ├── quiz_match.html    # Play match
+    ├── match_results.html # Match results
+    └── leaderboard.html   # Leaderboard
+```
+
+## Features in Detail
+
+### Unique Questions System
+- Every user gets different questions each match
+- Questions tracked in `user_question_history` table
+- SHA-256 hash used for question identification
+- Separate tracking per difficulty level
+- User can play ~5 matches before seeing repeats
+
+### ELO Rating
+- Starting rating: 1000
+- Updates after each match
+- Visible on profile and leaderboard
+- Used for matchmaking
+
+### Match System
+- Real-time question answering
+- Timer per question (optional)
+- Immediate feedback
+- Score calculation
+- ELO update on completion
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Test thoroughly
+5. Submit a pull request
+
+## License
+
+This project is open source and available under the MIT License.
+
+## Support
+
+For issues or questions:
+1. Check this README
+2. Review `HOW_2_PLAYER_WORKS.md`
+3. Check Flask terminal for error messages
+4. Verify database tables exist
+
+## Credits
+
+- **Quiz Questions**: Open Trivia Database (https://opentdb.com/)
+- **ELO System**: Based on chess rating system
+- **Framework**: Flask (Python web framework)
 
 ---
 
-Made with ❤️ for quiz enthusiasts
+**Version**: 1.0  
+**Status**: Production Ready  
+**Last Updated**: November 2025

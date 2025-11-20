@@ -54,6 +54,18 @@ CREATE TABLE IF NOT EXISTS match_answers (
     FOREIGN KEY (question_id) REFERENCES quiz_questions(id)
 );
 
+-- User question history table (tracks shown questions to ensure uniqueness)
+CREATE TABLE IF NOT EXISTS user_question_history (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    question_hash VARCHAR(64) NOT NULL,
+    difficulty VARCHAR(20),
+    category VARCHAR(100),
+    shown_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    UNIQUE KEY unique_user_question (user_id, question_hash)
+);
+
 -- Sample quiz questions
 INSERT INTO quiz_questions (question, option_a, option_b, option_c, option_d, correct_answer, difficulty, category) VALUES
 ('What is the capital of France?', 'London', 'Berlin', 'Paris', 'Madrid', 'c', 'easy', 'Geography'),

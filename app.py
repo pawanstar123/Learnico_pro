@@ -12,6 +12,7 @@ import random
 from datetime import datetime
 import requests
 import html
+import hashlib
 
 from flask_mysqldb import MySQL
 
@@ -241,10 +242,10 @@ def map_difficulty_to_api(user_difficulty):
     """
     Map user-friendly difficulty to API difficulty.
     
-    The Open Trivia API's difficulty is opposite to student expectations:
-    - API "easy" = Advanced math (suitable for high school)
-    - API "medium" = Moderate math (suitable for middle school)
-    - API "hard" = Basic math (suitable for primary school)
+    Standard mapping for student levels:
+    - User "easy" (Below 6th standard) → API "easy" (Basic questions)
+    - User "medium" (6-8th standard) → API "medium" (Moderate questions)
+    - User "hard" (9-12th standard) → API "hard" (Advanced questions)
     
     Args:
         user_difficulty: User-selected difficulty ('easy', 'medium', 'hard')
@@ -253,21 +254,22 @@ def map_difficulty_to_api(user_difficulty):
         API difficulty level
     """
     difficulty_map = {
-        'easy': 'hard',    # Below 6th standard → Basic math (API hard)
-        'medium': 'medium', # 6-8th standard → Moderate math (API medium)
-        'hard': 'easy'     # 9-12th standard → Advanced math (API easy)
+        'easy': 'easy',      # Below 6th standard → Basic questions (API easy)
+        'medium': 'medium',  # 6-8th standard → Moderate questions (API medium)
+        'hard': 'hard'       # 9-12th standard → Advanced questions (API hard)
     }
     return difficulty_map.get(user_difficulty, 'medium')
 
 # Fetch mixed difficulty questions
-def fetch_mixed_difficulty_questions(amount=10, base_difficulty=None, category=None):
+def fetch_mixed_difficulty_questions(amount=10, base_difficulty=None, category=None, user_id=None):
     """
-    Fetch questions with mixed difficulty levels for variety.
+    Fetch questions with mixed difficulty levels for variety, ensuring uniqueness per user.
     
     Args:
         amount: Total number of questions (default 10)
         base_difficulty: User-selected difficulty ('easy', 'medium', 'hard')
         category: Category ID (default 19 for Mathematics)
+        user_id: User ID to check for previously shown questions
     
     Returns:
         List of mixed difficulty questions
@@ -276,33 +278,47 @@ def fetch_mixed_difficulty_questions(amount=10, base_difficulty=None, category=N
         if category is None:
             category = 19
         
+        # Get user's question history
+        shown_hashes = []
+        if user_id:
+            shown_hashes = get_user_question_history(user_id, base_difficulty)
+        
         # Determine difficulty distribution based on user selection
         if base_difficulty == 'easy':
             # Below 6th: Mostly easy, some medium
-            distribution = {'hard': 7, 'medium': 3}  # API hard = basic math
+            distribution = {'easy': 7, 'medium': 3}  # Basic questions
         elif base_difficulty == 'hard':
             # 9-12th: Mostly hard, some medium
-            distribution = {'easy': 7, 'medium': 3}  # API easy = advanced math
+            distribution = {'hard': 7, 'medium': 3}  # Advanced questions
         else:
             # 6-8th: Mix of all levels
-            distribution = {'hard': 3, 'medium': 4, 'easy': 3}
+            distribution = {'easy': 3, 'medium': 4, 'hard': 3}
         
         all_questions = []
         question_id = 1
         
         # Fetch questions for each difficulty level
         for api_diff, count in distribution.items():
-            url = f"https://opentdb.com/api.php?amount={count}&type=multiple&category={category}&difficulty={api_diff}"
+            # Fetch more than needed to account for filtering
+            fetch_count = min(count * 2, 50)
+            url = f"https://opentdb.com/api.php?amount={fetch_count}&type=multiple&category={category}&difficulty={api_diff}"
             
             # Debug logging
-            print(f"[DEBUG] Fetching {count} questions with API difficulty='{api_diff}' for user difficulty='{base_difficulty}'")
+            print(f"[DEBUG] Fetching {fetch_count} questions with API difficulty='{api_diff}' for user difficulty='{base_difficulty}'")
             
             response = requests.get(url, timeout=10)
             if response.status_code == 200:
                 data = response.json()
                 if data['response_code'] == 0:
+                    questions_added = 0
                     for q in data['results']:
                         question_text = html.unescape(q['question'])
+                        question_hash = generate_question_hash(question_text)
+                        
+                        # Skip if user has seen this question before
+                        if user_id and question_hash in shown_hashes:
+                            continue
+                        
                         correct = html.unescape(q['correct_answer'])
                         incorrect = [html.unescape(ans) for ans in q['incorrect_answers']]
                         
@@ -315,6 +331,7 @@ def fetch_mixed_difficulty_questions(amount=10, base_difficulty=None, category=N
                         all_questions.append({
                             'id': question_id,
                             'question': question_text,
+                            'question_hash': question_hash,
                             'option_a': all_answers[0] if len(all_answers) > 0 else '',
                             'option_b': all_answers[1] if len(all_answers) > 1 else '',
                             'option_c': all_answers[2] if len(all_answers) > 2 else '',
@@ -324,6 +341,11 @@ def fetch_mixed_difficulty_questions(amount=10, base_difficulty=None, category=N
                             'difficulty': q['difficulty']
                         })
                         question_id += 1
+                        questions_added += 1
+                        
+                        # Stop when we have enough for this difficulty
+                        if questions_added >= count:
+                            break
         
         # Shuffle all questions for variety
         random.shuffle(all_questions)
@@ -332,53 +354,177 @@ def fetch_mixed_difficulty_questions(amount=10, base_difficulty=None, category=N
         for idx, q in enumerate(all_questions, 1):
             q['id'] = idx
         
-        return all_questions if all_questions else None
+        # Save questions to user history
+        if user_id:
+            for q in all_questions:
+                save_question_to_history(user_id, q['question_hash'], base_difficulty, q['category'])
+        
+        return all_questions if len(all_questions) >= amount else None
         
     except Exception as e:
         print(f"Error fetching mixed questions: {e}")
         return None
 
+# Generate unique hash for a question
+def generate_question_hash(question_text):
+    """Generate a unique hash for a question to track if it's been shown before"""
+    return hashlib.sha256(question_text.encode('utf-8')).hexdigest()
+
+# Get previously shown question hashes for a user
+def get_user_question_history(user_id, difficulty=None):
+    """Get list of question hashes already shown to this user"""
+    try:
+        cursor = mysql.connection.cursor()
+        if difficulty:
+            print(f"   [DB QUERY] SELECT question_hash FROM user_question_history WHERE user_id={user_id} AND difficulty='{difficulty}'")
+            cursor.execute("""
+                SELECT question_hash FROM user_question_history 
+                WHERE user_id=%s AND difficulty=%s
+            """, (user_id, difficulty))
+        else:
+            print(f"   [DB QUERY] SELECT question_hash FROM user_question_history WHERE user_id={user_id}")
+            cursor.execute("""
+                SELECT question_hash FROM user_question_history 
+                WHERE user_id=%s
+            """, (user_id,))
+        
+        history = [row[0] for row in cursor.fetchall()]
+        print(f"   [DB RESULT] Found {len(history)} question hashes")
+        cursor.close()
+        return history
+    except Exception as e:
+        error_msg = str(e)
+        if "doesn't exist" in error_msg or "1146" in error_msg:
+            print(f"[WARNING] user_question_history table doesn't exist!")
+            print(f"   Run: mysql -u root -p mydatabase < create_history_table.sql")
+            print(f"   Or visit: http://localhost:5000/admin/setup-database")
+        else:
+            print(f"Error fetching question history: {e}")
+        return []
+
+# Save question to user history
+def save_question_to_history(user_id, question_hash, difficulty, category):
+    """Save a question to user's history to avoid repeating it"""
+    try:
+        cursor = mysql.connection.cursor()
+        cursor.execute("""
+            INSERT IGNORE INTO user_question_history 
+            (user_id, question_hash, difficulty, category)
+            VALUES (%s, %s, %s, %s)
+        """, (user_id, question_hash, difficulty, category))
+        rows_affected = cursor.rowcount
+        mysql.connection.commit()
+        cursor.close()
+        if rows_affected > 0:
+            print(f"  ✓ Saved question hash {question_hash[:8]}... for user {user_id}")
+        else:
+            print(f"  ⊘ Question hash {question_hash[:8]}... already exists for user {user_id}")
+    except Exception as e:
+        error_msg = str(e)
+        if "doesn't exist" in error_msg or "1146" in error_msg:
+            print(f"[WARNING] user_question_history table doesn't exist!")
+            print(f"   Questions will not be tracked for uniqueness.")
+            print(f"   Run: mysql -u root -p mydatabase < create_history_table.sql")
+        else:
+            print(f"Error saving question history: {e}")
+
 # Fetch questions from Open Trivia Database API
-def fetch_quiz_questions(amount=10, difficulty=None, category=None):
+def fetch_quiz_questions(amount=10, difficulty=None, category=None, user_id=None):
     """
-    Fetch quiz questions from Open Trivia Database API
+    Fetch quiz questions from Open Trivia Database API with uniqueness guarantee
     
     Args:
         amount: Number of questions (1-50)
         difficulty: 'easy', 'medium', or 'hard' (user-selected difficulty)
         category: Category ID (optional - defaults to 19 for Mathematics)
+        user_id: User ID to check for previously shown questions
     
     Returns:
         List of formatted questions or None if error
     """
     try:
-        # Category 19 is Mathematics in Open Trivia DB
+        # Use Mathematics category (19) for math questions
         if category is None:
-            category = 19
+            category = 19  # Mathematics
         
         # Map user difficulty to API difficulty
         api_difficulty = map_difficulty_to_api(difficulty) if difficulty else None
         
-        url = f"https://opentdb.com/api.php?amount={amount}&type=multiple&category={category}"
+        # Get user's question history
+        shown_hashes = []
+        if user_id:
+            shown_hashes = get_user_question_history(user_id, difficulty)
+            print(f"\n   ===== FILTERING DEBUG =====")
+            print(f"   User ID: {user_id}")
+            print(f"   Difficulty: {difficulty}")
+            print(f"   Questions in history: {len(shown_hashes)}")
+            if len(shown_hashes) > 0:
+                print(f"   Sample hashes in history: {[h[:8] for h in shown_hashes[:5]]}")
+            print(f"   ===========================\n")
         
-        if api_difficulty:
+        # Fetch more questions than needed to filter out duplicates
+        # For Mathematics, use smaller multiplier as there are fewer questions
+        if category == 19:  # Mathematics
+            fetch_amount = min(amount * 2, 20)  # Math has limited questions
+        else:
+            fetch_amount = min(amount * 3, 50)  # Other categories have more
+        
+        # Build URL with category
+        # For Mathematics (19), don't filter by difficulty as it has limited questions
+        # We'll get all math questions and use them for all difficulty levels
+        url = f"https://opentdb.com/api.php?amount={fetch_amount}&type=multiple&category={category}"
+        
+        # Only add difficulty for non-math categories
+        if api_difficulty and category != 19:
             url += f"&difficulty={api_difficulty}"
+        
+        print(f"   API URL: {url}")
         
         response = requests.get(url, timeout=10)
         
+        print(f"   API Status: {response.status_code}")
+        
+        if response.status_code == 429:
+            print(f"   [RATE LIMIT] Waiting 5 seconds and retrying...")
+            import time
+            time.sleep(5)
+            response = requests.get(url, timeout=10)
+            print(f"   Retry Status: {response.status_code}")
+        
         if response.status_code != 200:
+            print(f"   [ERROR] API returned status {response.status_code}")
             return None
         
         data = response.json()
         
+        print(f"   API Response Code: {data.get('response_code', 'unknown')}")
+        print(f"   API Results Count: {len(data.get('results', []))}")
+        
         if data['response_code'] != 0:
+            print(f"   [ERROR] API error code: {data['response_code']}")
+            if data['response_code'] == 1:
+                print(f"   → No results for this category/difficulty combination")
+            elif data['response_code'] == 2:
+                print(f"   → Invalid parameter")
             return None
         
-        # Format questions to match our structure
+        # Format questions and filter out previously shown ones
         formatted_questions = []
-        for idx, q in enumerate(data['results']):
+        skipped_count = 0
+        for q in data['results']:
             # Decode HTML entities
             question_text = html.unescape(q['question'])
+            question_hash = generate_question_hash(question_text)
+            
+            # Skip if user has seen this question before
+            if user_id and question_hash in shown_hashes:
+                skipped_count += 1
+                print(f"   >>> SKIPPING: {question_hash[:8]}... (already in history)")
+                continue
+            else:
+                if user_id and len(shown_hashes) > 0:
+                    print(f"   >>> KEEPING: {question_hash[:8]}... (new question)")
+            
             correct = html.unescape(q['correct_answer'])
             incorrect = [html.unescape(ans) for ans in q['incorrect_answers']]
             
@@ -391,8 +537,9 @@ def fetch_quiz_questions(amount=10, difficulty=None, category=None):
             correct_letter = chr(97 + correct_index)  # 'a', 'b', 'c', 'd'
             
             formatted_questions.append({
-                'id': idx + 1,
+                'id': len(formatted_questions) + 1,
                 'question': question_text,
+                'question_hash': question_hash,
                 'option_a': all_answers[0] if len(all_answers) > 0 else '',
                 'option_b': all_answers[1] if len(all_answers) > 1 else '',
                 'option_c': all_answers[2] if len(all_answers) > 2 else '',
@@ -401,11 +548,33 @@ def fetch_quiz_questions(amount=10, difficulty=None, category=None):
                 'category': html.unescape(q['category']),
                 'difficulty': q['difficulty']
             })
+            
+            # Stop when we have enough unique questions
+            if len(formatted_questions) >= amount:
+                break
         
-        return formatted_questions
+        if skipped_count > 0:
+            print(f"   [FILTER] Skipped {skipped_count} duplicate questions")
+  
+        if user_id:
+            print(f"[SAVE] Saving {len(formatted_questions)} questions to history for user {user_id}")
+            for q in formatted_questions:
+                # Use the user's selected difficulty, not the API difficulty
+                save_question_to_history(user_id, q['question_hash'], difficulty, q['category'])
+            print(f"[OK] Questions saved to history")
+        
+        # Return questions even if we don't have the full amount (better than nothing)
+        if len(formatted_questions) > 0:
+            print(f"[OK] Returning {len(formatted_questions)} unique questions")
+            return formatted_questions
+        else:
+            print(f"[ERROR] No unique questions found")
+            return None
         
     except Exception as e:
-        print(f"Error fetching questions: {e}")
+        print(f"[EXCEPTION] Error in fetch_quiz_questions: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
 # ELO Rating Calculator
@@ -481,7 +650,11 @@ def matchmaking():
             
             # Get current user's ELO
             cursor.execute("SELECT elo_rating FROM users WHERE id=%s", (user_id,))
-            user_elo = int(cursor.fetchone()[0] or 1000)
+            result = cursor.fetchone()
+            try:
+                user_elo = int(result[0]) if result and result[0] not in (None, '', 'None') else 1000
+            except (ValueError, TypeError):
+                user_elo = 1000
             
             # Find available opponent (not in active match, similar ELO)
             cursor.execute("""
@@ -503,7 +676,10 @@ def matchmaking():
                 return jsonify({'error': 'No opponents available'}), 404
             
             opponent_id, opponent_name, opponent_elo = opponent
-            opponent_elo = int(opponent_elo or 1000)
+            try:
+                opponent_elo = int(opponent_elo) if opponent_elo not in (None, '', 'None') else 1000
+            except (ValueError, TypeError):
+                opponent_elo = 1000
             
             # Create new match
             cursor.execute("""
@@ -567,43 +743,48 @@ def quiz_match(match_id):
         # Get difficulty from session (default to medium)
         difficulty = session.get('quiz_difficulty', 'medium')
         
+        print(f"\n{'='*60}")
+        print(f"[MATCH] Quiz Match {match_id} - User {user_id}")
+        print(f"   Difficulty: {difficulty}")
+        print(f"{'='*60}")
+        
         # Fetch questions from API with proper difficulty mapping
-        # API has backwards difficulty, so we map correctly:
-        # User "easy" → API "hard" (basic math for young students)
-        # User "medium" → API "medium" (moderate math)
-        # User "hard" → API "easy" (advanced math for high school)
+        # Standard mapping:
+        # User "easy" → API "easy" (basic questions for below 6th standard)
+        # User "medium" → API "medium" (moderate questions for 6-8th standard)
+        # User "hard" → API "hard" (advanced questions for 9-12th standard)
         
         api_difficulty = map_difficulty_to_api(difficulty)
         
-        # Fetch from API - each call gets unique questions (no repeats)
-        questions = fetch_quiz_questions(amount=10, difficulty=api_difficulty, category=19)
+        # Fetch from API - each call gets unique questions (no repeats for this user)
+        print(f"[API] Fetching questions from API...")
+        # Use category 19 (Mathematics) with proper difficulty mapping
+        questions = fetch_quiz_questions(amount=10, difficulty=difficulty, category=19, user_id=user_id)
+        print(f"[API] Returned: {len(questions) if questions else 0} questions")
         
-        # Fallback to database if API fails
+        # If API fails, use fallback questions
         if not questions:
-            cursor = mysql.connection.cursor()
-            cursor.execute("""
-                SELECT id, question, option_a, option_b, option_c, option_d, correct_answer
-                FROM quiz_questions 
-                ORDER BY RAND() 
-                LIMIT 10
-            """)
-            db_questions = cursor.fetchall()
-            cursor.close()
-            
-            questions = []
-            for idx, q in enumerate(db_questions, 1):
-                questions.append({
-                    'id': idx,
-                    'question': q[1],
-                    'option_a': q[2],
-                    'option_b': q[3],
-                    'option_c': q[4],
-                    'option_d': q[5],
-                    'correct_answer': q[6]
-                })
+            print(f"\n[WARNING] API returned no questions - Using fallback")
+            # Fallback: Basic math questions
+            questions = [
+                {'id': 1, 'question': 'What is 5 + 3?', 'option_a': '6', 'option_b': '7', 'option_c': '8', 'option_d': '9', 'correct_answer': 'c'},
+                {'id': 2, 'question': 'What is 10 - 4?', 'option_a': '5', 'option_b': '6', 'option_c': '7', 'option_d': '8', 'correct_answer': 'b'},
+                {'id': 3, 'question': 'What is 3 × 4?', 'option_a': '10', 'option_b': '11', 'option_c': '12', 'option_d': '13', 'correct_answer': 'c'},
+                {'id': 4, 'question': 'What is 20 ÷ 5?', 'option_a': '3', 'option_b': '4', 'option_c': '5', 'option_d': '6', 'correct_answer': 'b'},
+                {'id': 5, 'question': 'What is 7 + 8?', 'option_a': '14', 'option_b': '15', 'option_c': '16', 'option_d': '17', 'correct_answer': 'b'},
+                {'id': 6, 'question': 'What is 15 - 7?', 'option_a': '6', 'option_b': '7', 'option_c': '8', 'option_d': '9', 'correct_answer': 'c'},
+                {'id': 7, 'question': 'What is 6 × 7?', 'option_a': '40', 'option_b': '41', 'option_c': '42', 'option_d': '43', 'correct_answer': 'c'},
+                {'id': 8, 'question': 'What is 36 ÷ 6?', 'option_a': '5', 'option_b': '6', 'option_c': '7', 'option_d': '8', 'correct_answer': 'b'},
+                {'id': 9, 'question': 'What is 9 + 6?', 'option_a': '13', 'option_b': '14', 'option_c': '15', 'option_d': '16', 'correct_answer': 'c'},
+                {'id': 10, 'question': 'What is 25 - 10?', 'option_a': '13', 'option_b': '14', 'option_c': '15', 'option_d': '16', 'correct_answer': 'c'}
+            ]
+            print(f"[OK] Using {len(questions)} fallback questions")
         
         # Store questions in session for answer validation
         session[f'match_{match_id}_questions'] = {q['id']: q['correct_answer'] for q in questions}
+        
+        print(f"\n[OK] Match setup complete - {len(questions)} questions ready")
+        print(f"{'='*60}\n")
         
         return render_template('quiz_match.html', match_id=match_id, questions=questions)
         
@@ -627,21 +808,12 @@ def submit_answer():
     user_id = session['user_id']
     
     try:
-        # Check if we have questions stored in session (API questions)
+        # Get correct answer from session (stored when match started)
         session_key = f'match_{match_id}_questions'
-        if session_key in session and str(question_id) in session[session_key]:
-            correct_answer = session[session_key][str(question_id)]
-        else:
-            # Fallback to database
-            cursor = mysql.connection.cursor()
-            cursor.execute("SELECT correct_answer FROM quiz_questions WHERE id=%s", (question_id,))
-            result = cursor.fetchone()
-            cursor.close()
-            
-            if not result:
-                return jsonify({'error': 'Question not found'}), 404
-            
-            correct_answer = result[0]
+        if session_key not in session or str(question_id) not in session[session_key]:
+            return jsonify({'error': 'Question not found in session'}), 404
+        
+        correct_answer = session[session_key][str(question_id)]
         
         is_correct = (selected_answer.lower() == correct_answer.lower())
         
@@ -689,9 +861,16 @@ def complete_match(match_id):
         
         player1_id, player2_id, p1_elo, p2_elo, status = match
         
-        # Convert ELO ratings to integers
-        p1_elo = int(p1_elo or 1000)
-        p2_elo = int(p2_elo or 1000)
+        # Convert ELO ratings to integers (handle None, empty string, or string values)
+        try:
+            p1_elo = int(p1_elo) if p1_elo not in (None, '', 'None') else 1000
+        except (ValueError, TypeError):
+            p1_elo = 1000
+        
+        try:
+            p2_elo = int(p2_elo) if p2_elo not in (None, '', 'None') else 1000
+        except (ValueError, TypeError):
+            p2_elo = 1000
         
         if status == 'completed':
             cursor.close()
@@ -706,8 +885,9 @@ def complete_match(match_id):
         """, (match_id,))
         
         scores = {row[0]: row[1] for row in cursor.fetchall()}
-        p1_score = scores.get(player1_id, 0)
-        p2_score = scores.get(player2_id, 0)
+        # Ensure scores are integers
+        p1_score = int(scores.get(player1_id, 0))
+        p2_score = int(scores.get(player2_id, 0))
         
         # Determine winner
         if p1_score > p2_score:
@@ -901,8 +1081,9 @@ def api_quiz_questions():
     amount = request.args.get('amount', 10, type=int)
     difficulty = request.args.get('difficulty', None)
     category = request.args.get('category', None)
+    user_id = session.get('user_id', None)
     
-    questions = fetch_quiz_questions(amount, difficulty, category)
+    questions = fetch_quiz_questions(amount, difficulty, category, user_id)
     
     if questions:
         return jsonify({'success': True, 'questions': questions})
@@ -953,22 +1134,9 @@ def admin_setup_database():
         except:
             results.append("total_xp column already exists")
         
-        # Create quiz_questions table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS quiz_questions (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                question TEXT NOT NULL,
-                option_a VARCHAR(255) NOT NULL,
-                option_b VARCHAR(255) NOT NULL,
-                option_c VARCHAR(255) NOT NULL,
-                option_d VARCHAR(255) NOT NULL,
-                correct_answer CHAR(1) NOT NULL,
-                difficulty ENUM('easy', 'medium', 'hard') DEFAULT 'medium',
-                category VARCHAR(100),
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        results.append("✓ quiz_questions table created")
+        # Note: quiz_questions table is no longer used (API only)
+        # Keeping this for backward compatibility but not creating it
+        results.append("ℹ️  quiz_questions table not needed (using API only)")
         
         # Create matches table
         cursor.execute("""
@@ -992,7 +1160,7 @@ def admin_setup_database():
         """)
         results.append("✓ matches table created")
         
-        # Create match_answers table
+        # Create match_answers table (question_id is just a number, not a foreign key)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS match_answers (
                 id INT AUTO_INCREMENT PRIMARY KEY,
@@ -1003,48 +1171,28 @@ def admin_setup_database():
                 is_correct BOOLEAN,
                 answered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (match_id) REFERENCES matches(id),
-                FOREIGN KEY (player_id) REFERENCES users(id),
-                FOREIGN KEY (question_id) REFERENCES quiz_questions(id)
+                FOREIGN KEY (player_id) REFERENCES users(id)
             )
         """)
         results.append("✓ match_answers table created")
         
-        # Check if questions already exist
-        cursor.execute("SELECT COUNT(*) FROM quiz_questions")
-        count = cursor.fetchone()[0]
+        # Create user_question_history table to track shown questions
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS user_question_history (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id INT NOT NULL,
+                question_hash VARCHAR(64) NOT NULL,
+                difficulty VARCHAR(20),
+                category VARCHAR(100),
+                shown_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id),
+                UNIQUE KEY unique_user_question (user_id, question_hash)
+            )
+        """)
+        results.append("✓ user_question_history table created")
         
-        if count == 0:
-            questions = [
-                ('What is the capital of France?', 'London', 'Berlin', 'Paris', 'Madrid', 'c', 'easy', 'Geography'),
-                ('Which planet is known as the Red Planet?', 'Venus', 'Mars', 'Jupiter', 'Saturn', 'b', 'easy', 'Science'),
-                ('Who painted the Mona Lisa?', 'Van Gogh', 'Picasso', 'Da Vinci', 'Rembrandt', 'c', 'medium', 'Art'),
-                ('What is 15 × 8?', '120', '125', '115', '130', 'a', 'easy', 'Math'),
-                ('Which programming language is known for web development?', 'Python', 'JavaScript', 'C++', 'Swift', 'b', 'medium', 'Technology'),
-                ('What year did World War II end?', '1943', '1944', '1945', '1946', 'c', 'medium', 'History'),
-                ('What is the largest ocean on Earth?', 'Atlantic', 'Indian', 'Arctic', 'Pacific', 'd', 'easy', 'Geography'),
-                ('Who wrote "Romeo and Juliet"?', 'Dickens', 'Shakespeare', 'Austen', 'Hemingway', 'b', 'easy', 'Literature'),
-                ('What is the speed of light?', '300,000 km/s', '150,000 km/s', '450,000 km/s', '600,000 km/s', 'a', 'hard', 'Science'),
-                ('Which element has the chemical symbol "Au"?', 'Silver', 'Gold', 'Copper', 'Aluminum', 'b', 'medium', 'Science'),
-                ('What is the smallest prime number?', '0', '1', '2', '3', 'c', 'easy', 'Math'),
-                ('Which country is home to the kangaroo?', 'New Zealand', 'Australia', 'South Africa', 'Brazil', 'b', 'easy', 'Geography'),
-                ('What does HTML stand for?', 'Hyper Text Markup Language', 'High Tech Modern Language', 'Home Tool Markup Language', 'Hyperlinks and Text Markup Language', 'a', 'medium', 'Technology'),
-                ('Who was the first person to walk on the moon?', 'Buzz Aldrin', 'Neil Armstrong', 'Yuri Gagarin', 'John Glenn', 'b', 'medium', 'History'),
-                ('What is the chemical formula for water?', 'H2O', 'CO2', 'O2', 'H2O2', 'a', 'easy', 'Science'),
-                ('Which is the longest river in the world?', 'Amazon', 'Nile', 'Yangtze', 'Mississippi', 'b', 'medium', 'Geography'),
-                ('What is the square root of 144?', '10', '11', '12', '13', 'c', 'easy', 'Math'),
-                ('Who developed the theory of relativity?', 'Newton', 'Einstein', 'Galileo', 'Hawking', 'b', 'medium', 'Science'),
-                ('What is the capital of Japan?', 'Seoul', 'Beijing', 'Tokyo', 'Bangkok', 'c', 'easy', 'Geography'),
-                ('Which language is most spoken worldwide?', 'English', 'Mandarin Chinese', 'Spanish', 'Hindi', 'b', 'medium', 'General Knowledge')
-            ]
-            
-            cursor.executemany("""
-                INSERT INTO quiz_questions 
-                (question, option_a, option_b, option_c, option_d, correct_answer, difficulty, category)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            """, questions)
-            results.append(f"✓ Inserted {len(questions)} sample questions")
-        else:
-            results.append(f"Quiz questions already exist ({count} questions)")
+        # No longer inserting sample questions (API only)
+        results.append("ℹ️  Sample questions not needed (using Open Trivia API)")
         
         mysql.connection.commit()
         cursor.close()
@@ -1310,8 +1458,8 @@ def admin_system_info():
         cursor.execute("SELECT COUNT(*) FROM users")
         user_count = cursor.fetchone()[0]
         
-        cursor.execute("SELECT COUNT(*) FROM quiz_questions")
-        question_count = cursor.fetchone()[0]
+        # No longer using quiz_questions table
+        question_count = "N/A (using API)"
         
         cursor.execute("SELECT COUNT(*) FROM matches")
         match_count = cursor.fetchone()[0]
