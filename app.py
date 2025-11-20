@@ -772,95 +772,109 @@ def submit_answer():
 
 @app.route('/quiz/complete_match/<int:match_id>', methods=['POST'])
 def complete_match(match_id):
-    """Complete match and calculate ELO"""
     if 'user_id' not in session:
         return jsonify({'error': 'Not logged in'}), 401
-    
-    user_id = session['user_id']
-    
+
     try:
         cursor = mysql.connection.cursor()
-        
-        # Get match details
+
+        # Fetch match
         cursor.execute("""
             SELECT player1_id, player2_id, player1_elo_before, player2_elo_before, status
-            FROM matches WHERE id=%s
+            FROM matches 
+            WHERE id=%s
         """, (match_id,))
-        match = cursor.fetchone()
         
+        match = cursor.fetchone()
         if not match:
             cursor.close()
             return jsonify({'error': 'Match not found'}), 404
-        
+
         player1_id, player2_id, p1_elo, p2_elo, status = match
-        
-        # Convert ELO ratings to integers (handle None, empty string, or string values)
+
+        # Normalize ELO values
         try:
             p1_elo = int(p1_elo) if p1_elo not in (None, '', 'None') else 1000
-        except (ValueError, TypeError):
+        except:
             p1_elo = 1000
-        
+
         try:
             p2_elo = int(p2_elo) if p2_elo not in (None, '', 'None') else 1000
-        except (ValueError, TypeError):
+        except:
             p2_elo = 1000
-        
+
         if status == 'completed':
             cursor.close()
             return jsonify({'error': 'Match already completed'}), 400
-        
-        # Calculate scores
+
+        # Fetch scores
         cursor.execute("""
-            SELECT player_id, COUNT(*) as correct_count
-            FROM match_answers
+            SELECT player_id, COUNT(*) 
+            FROM match_answers 
             WHERE match_id=%s AND is_correct=1
             GROUP BY player_id
         """, (match_id,))
         
-        scores = {row[0]: row[1] for row in cursor.fetchall()}
-        # Ensure scores are integers
-        p1_score = int(scores.get(player1_id, 0))
-        p2_score = int(scores.get(player2_id, 0))
-        
-        # Determine winner
+        score_rows = cursor.fetchall()
+        scores = {pid: int(count) for pid, count in score_rows}
+
+        p1_score = scores.get(player1_id, 0)
+        p2_score = scores.get(player2_id, 0)
+
+        # Determine winner & compute ELO
         if p1_score > p2_score:
             winner_id = player1_id
             p1_elo_new, p2_elo_new = calculate_elo(p1_elo, p2_elo)
+
         elif p2_score > p1_score:
             winner_id = player2_id
             p2_elo_new, p1_elo_new = calculate_elo(p2_elo, p1_elo)
+
         else:
+            # Tie — no ELO change
             winner_id = None
             p1_elo_new = p1_elo
             p2_elo_new = p2_elo
-        
-        # Update match
+
+        # Update match table
         cursor.execute("""
             UPDATE matches 
             SET player1_score=%s, player2_score=%s, winner_id=%s,
                 player1_elo_after=%s, player2_elo_after=%s,
                 status='completed', completed_at=NOW()
             WHERE id=%s
-        """, (p1_score, p2_score, winner_id, p1_elo_new, p2_elo_new, match_id))
-        
-        # Update player ratings and stats
+        """, (p1_score, p2_score, winner_id,
+              p1_elo_new, p2_elo_new, match_id))
+
+        # Update user 1 stats
         cursor.execute("""
             UPDATE users 
-            SET elo_rating=%s, matches_played=matches_played+1,
-                matches_won=matches_won+%s, total_xp=total_xp+%s
+            SET elo_rating=%s,
+                matches_played = matches_played + 1,
+                matches_won = matches_won + %s,
+                total_xp = total_xp + %s
             WHERE id=%s
-        """, (p1_elo_new, 1 if winner_id == player1_id else 0, p1_score * 10, player1_id))
-        
+        """, (p1_elo_new,
+              1 if winner_id == player1_id else 0,
+              p1_score * 10,
+              player1_id))
+
+        # Update user 2 stats
         cursor.execute("""
             UPDATE users 
-            SET elo_rating=%s, matches_played=matches_played+1,
-                matches_won=matches_won+%s, total_xp=total_xp+%s
+            SET elo_rating=%s,
+                matches_played = matches_played + 1,
+                matches_won = matches_won + %s,
+                total_xp = total_xp + %s
             WHERE id=%s
-        """, (p2_elo_new, 1 if winner_id == player2_id else 0, p2_score * 10, player2_id))
-        
+        """, (p2_elo_new,
+              1 if winner_id == player2_id else 0,
+              p2_score * 10,
+              player2_id))
+
         mysql.connection.commit()
         cursor.close()
-        
+
         return jsonify({
             'winner_id': winner_id,
             'player1_score': p1_score,
@@ -868,7 +882,7 @@ def complete_match(match_id):
             'player1_elo_new': p1_elo_new,
             'player2_elo_new': p2_elo_new
         })
-        
+
     except Exception as e:
         if 'cursor' in locals():
             cursor.close()
