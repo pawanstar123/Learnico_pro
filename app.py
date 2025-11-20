@@ -2,9 +2,7 @@ from flask import Flask,render_template,redirect,url_for, flash,session,request,
 import os
 from werkzeug.utils import secure_filename
 
-from flask_wtf import FlaskForm
-from wtforms import StringField,PasswordField,SubmitField
-from wtforms.validators import DataRequired, Email, ValidationError,EqualTo
+
 
 import bcrypt
 import re
@@ -33,17 +31,7 @@ ALLOWED_AVATAR_EXTENSIONS = { 'png', 'jpg', 'jpeg', 'gif', 'webp' }
 def is_allowed_avatar(filename: str) -> bool:
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_AVATAR_EXTENSIONS
 
-class RegisterForm(FlaskForm):
-    name=StringField("Name",validators=[DataRequired()])
-    email=StringField("email",validators=[DataRequired(), Email()])
-    Password=PasswordField("Password",validators=[DataRequired()])
-    confirm_password = PasswordField("Confirm Password",validators=[DataRequired(), EqualTo('Password', message='Passwords must match')])
-    submit=SubmitField("Register")
-class LoginForm(FlaskForm):
-    
-    email=StringField("email",validators=[DataRequired(), Email()])
-    Password=PasswordField("Password",validators=[DataRequired()])
-    submit=SubmitField("Login")
+
 
 @app.route('/')
 def index():
@@ -303,8 +291,7 @@ def fetch_mixed_difficulty_questions(amount=10, base_difficulty=None, category=N
             fetch_count = min(count * 2, 50)
             url = f"https://opentdb.com/api.php?amount={fetch_count}&type=multiple&category={category}&difficulty={api_diff}"
             
-            # Debug logging
-            print(f"[DEBUG] Fetching {fetch_count} questions with API difficulty='{api_diff}' for user difficulty='{base_difficulty}'")
+
             
             response = requests.get(url, timeout=10)
             if response.status_code == 200:
@@ -376,20 +363,17 @@ def get_user_question_history(user_id, difficulty=None):
     try:
         cursor = mysql.connection.cursor()
         if difficulty:
-            print(f"   [DB QUERY] SELECT question_hash FROM user_question_history WHERE user_id={user_id} AND difficulty='{difficulty}'")
             cursor.execute("""
                 SELECT question_hash FROM user_question_history 
                 WHERE user_id=%s AND difficulty=%s
             """, (user_id, difficulty))
         else:
-            print(f"   [DB QUERY] SELECT question_hash FROM user_question_history WHERE user_id={user_id}")
             cursor.execute("""
                 SELECT question_hash FROM user_question_history 
                 WHERE user_id=%s
             """, (user_id,))
         
         history = [row[0] for row in cursor.fetchall()]
-        print(f"   [DB RESULT] Found {len(history)} question hashes")
         cursor.close()
         return history
     except Exception as e:
@@ -412,13 +396,8 @@ def save_question_to_history(user_id, question_hash, difficulty, category):
             (user_id, question_hash, difficulty, category)
             VALUES (%s, %s, %s, %s)
         """, (user_id, question_hash, difficulty, category))
-        rows_affected = cursor.rowcount
         mysql.connection.commit()
         cursor.close()
-        if rows_affected > 0:
-            print(f"  ✓ Saved question hash {question_hash[:8]}... for user {user_id}")
-        else:
-            print(f"  ⊘ Question hash {question_hash[:8]}... already exists for user {user_id}")
     except Exception as e:
         error_msg = str(e)
         if "doesn't exist" in error_msg or "1146" in error_msg:
@@ -454,13 +433,6 @@ def fetch_quiz_questions(amount=10, difficulty=None, category=None, user_id=None
         shown_hashes = []
         if user_id:
             shown_hashes = get_user_question_history(user_id, difficulty)
-            print(f"\n   ===== FILTERING DEBUG =====")
-            print(f"   User ID: {user_id}")
-            print(f"   Difficulty: {difficulty}")
-            print(f"   Questions in history: {len(shown_hashes)}")
-            if len(shown_hashes) > 0:
-                print(f"   Sample hashes in history: {[h[:8] for h in shown_hashes[:5]]}")
-            print(f"   ===========================\n")
         
         # Fetch more questions than needed to filter out duplicates
         # For Mathematics, use smaller multiplier as there are fewer questions
@@ -478,34 +450,19 @@ def fetch_quiz_questions(amount=10, difficulty=None, category=None, user_id=None
         if api_difficulty and category != 19:
             url += f"&difficulty={api_difficulty}"
         
-        print(f"   API URL: {url}")
-        
         response = requests.get(url, timeout=10)
         
-        print(f"   API Status: {response.status_code}")
-        
         if response.status_code == 429:
-            print(f"   [RATE LIMIT] Waiting 5 seconds and retrying...")
             import time
             time.sleep(5)
             response = requests.get(url, timeout=10)
-            print(f"   Retry Status: {response.status_code}")
         
         if response.status_code != 200:
-            print(f"   [ERROR] API returned status {response.status_code}")
             return None
         
         data = response.json()
         
-        print(f"   API Response Code: {data.get('response_code', 'unknown')}")
-        print(f"   API Results Count: {len(data.get('results', []))}")
-        
         if data['response_code'] != 0:
-            print(f"   [ERROR] API error code: {data['response_code']}")
-            if data['response_code'] == 1:
-                print(f"   → No results for this category/difficulty combination")
-            elif data['response_code'] == 2:
-                print(f"   → Invalid parameter")
             return None
         
         # Format questions and filter out previously shown ones
@@ -519,11 +476,7 @@ def fetch_quiz_questions(amount=10, difficulty=None, category=None, user_id=None
             # Skip if user has seen this question before
             if user_id and question_hash in shown_hashes:
                 skipped_count += 1
-                print(f"   >>> SKIPPING: {question_hash[:8]}... (already in history)")
                 continue
-            else:
-                if user_id and len(shown_hashes) > 0:
-                    print(f"   >>> KEEPING: {question_hash[:8]}... (new question)")
             
             correct = html.unescape(q['correct_answer'])
             incorrect = [html.unescape(ans) for ans in q['incorrect_answers']]
@@ -553,28 +506,15 @@ def fetch_quiz_questions(amount=10, difficulty=None, category=None, user_id=None
             if len(formatted_questions) >= amount:
                 break
         
-        if skipped_count > 0:
-            print(f"   [FILTER] Skipped {skipped_count} duplicate questions")
-  
+        # Save questions to user history
         if user_id:
-            print(f"[SAVE] Saving {len(formatted_questions)} questions to history for user {user_id}")
             for q in formatted_questions:
-                # Use the user's selected difficulty, not the API difficulty
                 save_question_to_history(user_id, q['question_hash'], difficulty, q['category'])
-            print(f"[OK] Questions saved to history")
         
-        # Return questions even if we don't have the full amount (better than nothing)
-        if len(formatted_questions) > 0:
-            print(f"[OK] Returning {len(formatted_questions)} unique questions")
-            return formatted_questions
-        else:
-            print(f"[ERROR] No unique questions found")
-            return None
+        return formatted_questions if len(formatted_questions) > 0 else None
         
     except Exception as e:
-        print(f"[EXCEPTION] Error in fetch_quiz_questions: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"Error fetching questions: {e}")
         return None
 
 # ELO Rating Calculator
@@ -743,10 +683,7 @@ def quiz_match(match_id):
         # Get difficulty from session (default to medium)
         difficulty = session.get('quiz_difficulty', 'medium')
         
-        print(f"\n{'='*60}")
-        print(f"[MATCH] Quiz Match {match_id} - User {user_id}")
-        print(f"   Difficulty: {difficulty}")
-        print(f"{'='*60}")
+
         
         # Fetch questions from API with proper difficulty mapping
         # Standard mapping:
@@ -757,15 +694,10 @@ def quiz_match(match_id):
         api_difficulty = map_difficulty_to_api(difficulty)
         
         # Fetch from API - each call gets unique questions (no repeats for this user)
-        print(f"[API] Fetching questions from API...")
-        # Use category 19 (Mathematics) with proper difficulty mapping
         questions = fetch_quiz_questions(amount=10, difficulty=difficulty, category=19, user_id=user_id)
-        print(f"[API] Returned: {len(questions) if questions else 0} questions")
         
         # If API fails, use fallback questions
         if not questions:
-            print(f"\n[WARNING] API returned no questions - Using fallback")
-            # Fallback: Basic math questions
             questions = [
                 {'id': 1, 'question': 'What is 5 + 3?', 'option_a': '6', 'option_b': '7', 'option_c': '8', 'option_d': '9', 'correct_answer': 'c'},
                 {'id': 2, 'question': 'What is 10 - 4?', 'option_a': '5', 'option_b': '6', 'option_c': '7', 'option_d': '8', 'correct_answer': 'b'},
@@ -778,13 +710,9 @@ def quiz_match(match_id):
                 {'id': 9, 'question': 'What is 9 + 6?', 'option_a': '13', 'option_b': '14', 'option_c': '15', 'option_d': '16', 'correct_answer': 'c'},
                 {'id': 10, 'question': 'What is 25 - 10?', 'option_a': '13', 'option_b': '14', 'option_c': '15', 'option_d': '16', 'correct_answer': 'c'}
             ]
-            print(f"[OK] Using {len(questions)} fallback questions")
         
         # Store questions in session for answer validation
         session[f'match_{match_id}_questions'] = {q['id']: q['correct_answer'] for q in questions}
-        
-        print(f"\n[OK] Match setup complete - {len(questions)} questions ready")
-        print(f"{'='*60}\n")
         
         return render_template('quiz_match.html', match_id=match_id, questions=questions)
         
@@ -1316,198 +1244,6 @@ def admin_test_api():
     
     return jsonify(results)
 
-@app.route('/admin/test-template')
-def admin_test_template():
-    """Test template rendering (Admin only)"""
-    if not app.debug:
-        return jsonify({'error': 'Access denied'}), 403
-    
-    try:
-        # Sample questions for testing
-        sample_questions = [
-            {
-                'id': 1,
-                'question': 'What is 2 + 2?',
-                'option_a': '3',
-                'option_b': '4',
-                'option_c': '5',
-                'option_d': '6',
-                'correct_answer': 'b',
-                'category': 'Math',
-                'difficulty': 'easy'
-            },
-            {
-                'id': 2,
-                'question': 'What is the capital of France?',
-                'option_a': 'London',
-                'option_b': 'Berlin',
-                'option_c': 'Paris',
-                'option_d': 'Madrid',
-                'correct_answer': 'c',
-                'category': 'Geography',
-                'difficulty': 'easy'
-            }
-        ]
-        
-        # Test rendering
-        from jinja2 import Template
-        
-        test_template = """
-        <script id="quiz-data" type="application/json">
-        {{ questions | tojson }}
-        </script>
-        <script>
-            const questionsData = JSON.parse(document.getElementById('quiz-data').textContent);
-            const matchId = parseInt('{{ match_id }}');
-        </script>
-        """
-        
-        template = Template(test_template)
-        rendered = template.render(questions=sample_questions, match_id=123)
-        
-        # Verify JSON is valid
-        import re
-        json_match = re.search(r'<script id="quiz-data"[^>]*>(.*?)</script>', rendered, re.DOTALL)
-        
-        if json_match:
-            json_str = json_match.group(1).strip()
-            import json
-            parsed = json.loads(json_str)
-            
-            return jsonify({
-                'success': True,
-                'test': 'template_rendering',
-                'questions_count': len(parsed),
-                'sample_question': parsed[0]['question'],
-                'rendered_html': rendered,
-                'message': 'Template rendering test passed'
-            })
-        else:
-            return jsonify({
-                'success': False,
-                'error': 'Could not parse rendered template'
-            }), 500
-            
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-@app.route('/admin/verify-template')
-def admin_verify_template():
-    """Verify quiz_match.html template structure (Admin only)"""
-    if not app.debug:
-        return jsonify({'error': 'Access denied'}), 403
-    
-    try:
-        import os
-        template_path = os.path.join('templates', 'quiz_match.html')
-        
-        if not os.path.exists(template_path):
-            return jsonify({
-                'success': False,
-                'error': 'quiz_match.html not found'
-            }), 404
-        
-        with open(template_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-        
-        # Check for key elements
-        checks = {
-            'has_json_script_tag': 'id="quiz-data"' in content,
-            'has_questions_data': 'questionsData' in content,
-            'has_match_id': 'matchId' in content,
-            'has_load_question': 'loadQuestion()' in content,
-            'has_select_answer': 'selectAnswer' in content,
-            'has_timer': 'startTimer()' in content,
-            'has_complete_match': 'completeMatch()' in content,
-            'uses_json_parse': 'JSON.parse' in content,
-            'has_escape_html': 'escapeHtml' in content
-        }
-        
-        all_passed = all(checks.values())
-        
-        return jsonify({
-            'success': all_passed,
-            'template': 'quiz_match.html',
-            'checks': checks,
-            'file_size': len(content),
-            'message': 'All checks passed' if all_passed else 'Some checks failed'
-        })
-        
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-@app.route('/admin/system-info')
-def admin_system_info():
-    """Get system and application information (Admin only)"""
-    if not app.debug:
-        return jsonify({'error': 'Access denied'}), 403
-    
-    try:
-        import sys
-        import platform
-        
-        # Count database records
-        cursor = mysql.connection.cursor()
-        
-        cursor.execute("SELECT COUNT(*) FROM users")
-        user_count = cursor.fetchone()[0]
-        
-        # No longer using quiz_questions table
-        question_count = "N/A (using API)"
-        
-        cursor.execute("SELECT COUNT(*) FROM matches")
-        match_count = cursor.fetchone()[0]
-        
-        cursor.execute("SELECT COUNT(*) FROM match_answers")
-        answer_count = cursor.fetchone()[0]
-        
-        cursor.close()
-        
-        # Get Python packages
-        import pkg_resources
-        installed_packages = {pkg.key: pkg.version for pkg in pkg_resources.working_set}
-        
-        return jsonify({
-            'success': True,
-            'system': {
-                'python_version': sys.version,
-                'platform': platform.platform(),
-                'flask_debug': app.debug
-            },
-            'database': {
-                'users': user_count,
-                'questions': question_count,
-                'matches': match_count,
-                'answers': answer_count
-            },
-            'packages': {
-                'flask': installed_packages.get('flask', 'unknown'),
-                'mysqlclient': installed_packages.get('mysqlclient', 'unknown'),
-                'bcrypt': installed_packages.get('bcrypt', 'unknown'),
-                'requests': installed_packages.get('requests', 'unknown')
-            },
-            'routes_count': len([rule.rule for rule in app.url_map.iter_rules()]),
-            'admin_routes': [
-                '/admin/setup-database',
-                '/admin/fix-null-elo',
-                '/admin/test-api',
-                '/admin/test-template',
-                '/admin/verify-template',
-                '/admin/system-info'
-            ]
-        })
-        
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
 if __name__=='__main__':
     app.run(host='0.0.0.0', port=5000)
+    """Test template rendering (Admin only)"""
