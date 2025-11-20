@@ -737,12 +737,17 @@ def submit_answer():
     
     try:
         # Get correct answer from session (stored when match started)
+       # Session key
         session_key = f'match_{match_id}_questions'
-        if session_key not in session or str(question_id) not in session[session_key]:
+
+        # FIX: Convert question_id to string for lookup
+        qid = str(question_id)
+
+        if session_key not in session or qid not in session[session_key]:
             return jsonify({'error': 'Question not found in session'}), 404
-        
-        correct_answer = session[session_key][str(question_id)]
-        
+
+        correct_answer = session[session_key][qid]
+
         is_correct = (selected_answer.lower() == correct_answer.lower())
         
         # Save answer
@@ -1246,4 +1251,4 @@ def admin_test_api():
 
 if __name__=='__main__':
     app.run(host='0.0.0.0', port=5000)
-    """Test template rendering (Admin only)"""
+    """Test template rendering (Admin only)"""
