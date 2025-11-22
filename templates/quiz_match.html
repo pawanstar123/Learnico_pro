@@ -24,12 +24,12 @@
         <div class="loading-spinner">🔄</div>
     </div>
     
-    <!-- Waiting for Opponent Screen -->
+    <!-- Match Completed Screen -->
     <div class="waiting-screen" id="waiting-screen" style="display:none;">
         <div class="waiting-container">
-            <div class="waiting-icon">⏳</div>
-            <h2>Waiting for Opponent</h2>
-            <p class="waiting-message">Your opponent is still completing the quiz...</p>
+            <div class="waiting-icon">✅</div>
+            <h2>Match Completed!</h2>
+            <p class="waiting-message">Calculating results...</p>
             <div class="loading-dots">
                 <span></span><span></span><span></span>
             </div>
@@ -203,6 +203,8 @@
         document.getElementById('question-container').style.display = 'none';
         document.getElementById('match-complete').style.display = 'block';
 
+        // NEW BEHAVIOR: Match terminates when first player completes
+        // No waiting - results calculated immediately with current scores
         fetch(`/quiz/complete_match/${matchId}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' }
@@ -210,12 +212,12 @@
             .then(res => res.json())
             .then(data => {
                 if (data.status === 'completed') {
-                    // Both players finished - show results
+                    // Match completed - show results immediately
                     setTimeout(() => {
                         window.location.href = `/quiz/results/${matchId}`;
                     }, 2000);
                 } else if (data.status === 'waiting') {
-                    // Waiting for opponent
+                    // Legacy: Show waiting screen (shouldn't happen with new behavior)
                     showWaitingScreen();
                     startPolling();
                 } else {

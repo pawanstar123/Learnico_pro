@@ -832,6 +832,10 @@ def challenge_player():
         if not opponent_id:
             return jsonify({'error': 'Opponent ID required'}), 400
         
+        # Prevent self-challenge (same user on different devices/tabs)
+        if int(opponent_id) == int(user_id):
+            return jsonify({'error': 'You cannot challenge yourself! Please play from different accounts.'}), 400
+        
         # Store difficulty in session
         session['quiz_difficulty'] = difficulty
         
@@ -997,6 +1001,12 @@ def quiz_match(match_id):
             return redirect(url_for('quiz_home'))
         
         player1_id, player2_id, status = match
+        
+        # Validate that both players are different (prevent self-play)
+        if player1_id == player2_id:
+            cursor.close()
+            flash('error: Invalid match - both players are the same. Please create a new match.', 'error')
+            return redirect(url_for('quiz_home'))
         
         if user_id not in [player1_id, player2_id]:
             cursor.close()
@@ -1164,19 +1174,17 @@ def complete_match(match_id):
 
             mysql.connection.commit()
 
-            # Check if BOTH players have completed
-            if not (p1_completed and p2_completed):
-                cursor.close()
-                return jsonify({
-                    'status': 'waiting',
-                    'message': 'Waiting for opponent to finish'
-                })
+            # NEW BEHAVIOR: First player to complete ends the match immediately
+            # No waiting for opponent - match terminates when anyone finishes
+            print(f"[MATCH] Player {user_id} completed match {match_id}")
+            print(f"[MATCH] Terminating match immediately - no waiting")
+            
         except Exception as e:
             # Columns don't exist - skip to immediate completion (old behavior)
             print(f"[WARNING] Cannot update completion status: {e}")
             pass
 
-        # BOTH players completed - calculate results
+        # Calculate results immediately when first player completes
         # Fetch scores
         cursor.execute("""
             SELECT player_id, COUNT(*) 
