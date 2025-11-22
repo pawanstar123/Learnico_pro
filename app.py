@@ -1,4 +1,4 @@
-from flask import Flask,render_template,redirect,url_for, flash,session,request,jsonify
+from flask import Flask,render_template,redirect,url_for, flash,session,request,jsonify,make_response
 import os
 from werkzeug.utils import secure_filename
 
@@ -22,11 +22,28 @@ app.config['MYSQL_PASSWORD'] = 'pavan@985'
 app.config['MYSQL_DB'] = 'mydatabase'
 app.secret_key = 'your_secret_key_here'
 
+# Development configuration - disable caching for instant updates
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
+app.config['TEMPLATES_AUTO_RELOAD'] = True
+
 mysql=MySQL(app)
 
 # File upload configuration for avatars
 app.config['UPLOAD_FOLDER'] = os.path.join('static', 'avatars')
 ALLOWED_AVATAR_EXTENSIONS = { 'png', 'jpg', 'jpeg', 'gif', 'webp' }
+
+# In-memory storage for online players (simple solution without DB changes)
+online_players = {}  # {user_id: {'difficulty': 'medium', 'timestamp': datetime, 'name': 'username', 'elo': 1000}}
+
+# Prevent caching of pages to avoid back button issues after logout
+@app.after_request
+def add_no_cache_headers(response):
+    """Add headers to prevent browser caching of sensitive pages"""
+    if 'user_id' in session or request.endpoint in ['login', 'register', 'Dashboard', 'logout']:
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, private, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+    return response
 
 def is_allowed_avatar(filename: str) -> bool:
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_AVATAR_EXTENSIONS
@@ -35,12 +52,19 @@ def is_allowed_avatar(filename: str) -> bool:
 
 @app.route('/')
 def index():
+    # If user is logged in, redirect to Dashboard
+    if 'user_id' in session:
+        return redirect(url_for('Dashboard'))
     return render_template("index.html")
 
 
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
+    # Redirect to dashboard if user is already logged in
+    if 'user_id' in session:
+        return redirect(url_for('Dashboard'))
+    
     if request.method == 'POST':
         # Get form data from HTML form
         username = request.form.get('username', '').strip()
@@ -67,13 +91,45 @@ def register():
             flash('error: Password is required', 'error')
             return render_template("register.html")
         
+        # Password validation: 8-16 characters, lowercase, uppercase, special symbol
+        if len(password) < 8 or len(password) > 16:
+            flash('error: Password must be 8-16 characters long', 'error')
+            return render_template("register.html")
+        
+        if not re.search(r'[a-z]', password):
+            flash('error: Password must contain at least one lowercase letter', 'error')
+            return render_template("register.html")
+        
+        if not re.search(r'[A-Z]', password):
+            flash('error: Password must contain at least one uppercase letter', 'error')
+            return render_template("register.html")
+        
+        if not re.search(r'[0-9]', password):
+            flash('error: Password must contain at least one number', 'error')
+            return render_template("register.html")
+        
+        if not re.search(r'[!@#$%^&*(),.?":{}|<>]', password):
+            flash('error: Password must contain at least one special character (!@#$%^&*)', 'error')
+            return render_template("register.html")
+        
         if password != confirm_password:
             flash('error: Passwords do not match', 'error')
             return render_template("register.html")
         
-        # Check if email already exists
+        # Check if username or email already exists
         try:
             cursor = mysql.connection.cursor()
+            
+            # Check if username already exists
+            cursor.execute("SELECT id FROM users WHERE name=%s", (username,))
+            existing_username = cursor.fetchone()
+            
+            if existing_username:
+                cursor.close()
+                flash('error: Username already exists. Please choose a different username.', 'error')
+                return render_template("register.html")
+            
+            # Check if email already exists
             cursor.execute("SELECT * FROM users WHERE email=%s", (email,))
             existing_user = cursor.fetchone()
             
@@ -101,6 +157,10 @@ def register():
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    # Redirect to dashboard if user is already logged in
+    if 'user_id' in session:
+        return redirect(url_for('Dashboard'))
+    
     if request.method == 'POST':
         # Get form data from HTML form (username can be email or username)
         username_or_email = request.form.get('username', '').strip()
@@ -119,7 +179,6 @@ def login():
 
             if user and bcrypt.checkpw(password.encode('utf-8'), user[3].encode('utf-8')):
                 session['user_id'] = user[0]
-                flash('success: Login successful!', 'success')
                 return redirect(url_for('Dashboard'))
             else:
                 flash('error: Login failed. Please check your email/username and password', 'error')
@@ -163,36 +222,55 @@ def profile():
             flash('error: Name is too long', 'error')
             return redirect(url_for('profile'))
 
+        cursor = None
         try:
             # Update name
             cursor = mysql.connection.cursor()
             cursor.execute("UPDATE users SET name=%s WHERE id=%s", (new_name, session['user_id']))
             mysql.connection.commit()
             cursor.close()
+            cursor = None
 
             # Handle avatar upload if provided
             avatar_file = request.files.get('avatar')
-            if avatar_file and avatar_file.filename and is_allowed_avatar(avatar_file.filename):
-                # ensure folder exists
+            if avatar_file and avatar_file.filename:
+                # Validate file extension
+                if not is_allowed_avatar(avatar_file.filename):
+                    flash('error: Invalid file type. Allowed: png, jpg, jpeg, gif, webp', 'error')
+                    return redirect(url_for('profile'))
+                
+                # Check file size (max 5MB)
+                avatar_file.seek(0, 2)  # Seek to end
+                file_size = avatar_file.tell()
+                avatar_file.seek(0)  # Reset to beginning
+                
+                if file_size > 5 * 1024 * 1024:  # 5MB limit
+                    flash('error: File size too large. Maximum 5MB allowed', 'error')
+                    return redirect(url_for('profile'))
+                
+                # Ensure folder exists
                 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+                
+                # Get file extension
                 ext = avatar_file.filename.rsplit('.', 1)[1].lower()
-                filename = secure_filename(f"{session['user_id']}.{ext}")
+                filename = f"{session['user_id']}.{ext}"
                 save_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
 
-                # Remove other avatar extensions for this user to avoid stale files
+                # Remove old avatar files for this user
                 for e in ALLOWED_AVATAR_EXTENSIONS:
                     old_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{session['user_id']}.{e}")
                     if os.path.exists(old_path) and old_path != save_path:
                         try:
                             os.remove(old_path)
-                        except Exception:
-                            pass
+                        except Exception as remove_error:
+                            print(f"Could not remove old avatar: {remove_error}")
 
+                # Save new avatar
                 avatar_file.save(save_path)
 
             flash('success: Profile updated successfully', 'success')
         except Exception as e:
-            if 'cursor' in locals():
+            if cursor:
                 cursor.close()
             flash(f'error: Failed to update profile. {str(e)}', 'error')
 
@@ -200,28 +278,38 @@ def profile():
 
     # GET: fetch current user to display
     user_id = session['user_id']
-    cursor = mysql.connection.cursor()
-    cursor.execute("SELECT * FROM users where id=%s", (user_id,))
-    user = cursor.fetchone()
-    cursor.close()
+    try:
+        cursor = mysql.connection.cursor()
+        cursor.execute("SELECT * FROM users where id=%s", (user_id,))
+        user = cursor.fetchone()
+        cursor.close()
 
-    # Determine avatar filename if exists
-    avatar_filename = None
-    for ext in ALLOWED_AVATAR_EXTENSIONS:
-        candidate = os.path.join(app.config['UPLOAD_FOLDER'], f"{user_id}.{ext}")
-        if os.path.exists(candidate):
-            avatar_filename = f"avatars/{user_id}.{ext}"
-            break
+        # Determine avatar filename if exists
+        avatar_filename = None
+        if os.path.exists(app.config['UPLOAD_FOLDER']):
+            for ext in ALLOWED_AVATAR_EXTENSIONS:
+                candidate = os.path.join(app.config['UPLOAD_FOLDER'], f"{user_id}.{ext}")
+                if os.path.exists(candidate):
+                    avatar_filename = f"avatars/{user_id}.{ext}"
+                    break
 
-    return render_template('profile.html', user=user, avatar_filename=avatar_filename)
+        return render_template('profile.html', user=user, avatar_filename=avatar_filename)
+    except Exception as e:
+        flash(f'error: Failed to load profile. {str(e)}', 'error')
+        return redirect(url_for('Dashboard'))
 
  
 
 @app.route('/logout')
 def logout():
-    session.pop('user_id',None)
-    flash("you have been logged out successfully. ")
-    return redirect(url_for('login'))
+    session.clear()  # Clear all session data
+    response = make_response(redirect(url_for('login')))
+    # Add headers to prevent caching
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, private, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    flash("You have been logged out successfully.", 'success')
+    return response
 
 # ============ QUIZ SYSTEM ============
 
@@ -419,7 +507,7 @@ def fetch_quiz_questions(amount=10, difficulty=None, category=None, user_id=None
         user_id: User ID to check for previously shown questions
     
     Returns:
-        List of formatted questions or None if error
+        List of formatted questions or fallback questions if API fails
     """
     try:
         # Use Mathematics category (19) for math questions
@@ -432,43 +520,80 @@ def fetch_quiz_questions(amount=10, difficulty=None, category=None, user_id=None
         # Get user's question history
         shown_hashes = []
         if user_id:
-            shown_hashes = get_user_question_history(user_id, difficulty)
+            try:
+                shown_hashes = get_user_question_history(user_id, difficulty)
+            except Exception as e:
+                print(f"Warning: Could not get user question history: {e}")
+                shown_hashes = []
         
-        # Fetch more questions than needed to filter out duplicates
-        # For Mathematics, use smaller multiplier as there are fewer questions
-        if category == 19:  # Mathematics
-            fetch_amount = min(amount * 2, 20)  # Math has limited questions
-        else:
-            fetch_amount = min(amount * 3, 50)  # Other categories have more
+        # Try multiple strategies to get questions
+        strategies = [
+            # Strategy 1: Specific category with difficulty
+            f"https://opentdb.com/api.php?amount={min(amount * 2, 20)}&type=multiple&category={category}" + (f"&difficulty={api_difficulty}" if api_difficulty and category != 19 else ""),
+            # Strategy 2: Any category with difficulty
+            f"https://opentdb.com/api.php?amount={min(amount * 2, 20)}&type=multiple" + (f"&difficulty={api_difficulty}" if api_difficulty else ""),
+            # Strategy 3: Any questions without difficulty filter
+            f"https://opentdb.com/api.php?amount={min(amount * 2, 20)}&type=multiple"
+        ]
         
-        # Build URL with category
-        # For Mathematics (19), don't filter by difficulty as it has limited questions
-        # We'll get all math questions and use them for all difficulty levels
-        url = f"https://opentdb.com/api.php?amount={fetch_amount}&type=multiple&category={category}"
+        for strategy_url in strategies:
+            try:
+                print(f"Trying API strategy: {strategy_url}")
+                response = requests.get(strategy_url, timeout=15)
+                
+                # Handle rate limiting
+                if response.status_code == 429:
+                    print("Rate limited, waiting 5 seconds...")
+                    import time
+                    time.sleep(5)
+                    response = requests.get(strategy_url, timeout=15)
+                
+                if response.status_code != 200:
+                    print(f"HTTP error {response.status_code}, trying next strategy")
+                    continue
+                
+                data = response.json()
+                
+                # Check API response code
+                if data.get('response_code') != 0:
+                    print(f"API response code {data.get('response_code')}, trying next strategy")
+                    continue
+                
+                # Process questions if we got them
+                if data.get('results') and len(data['results']) > 0:
+                    formatted_questions = process_api_questions(data['results'], shown_hashes, user_id, difficulty, amount)
+                    if len(formatted_questions) >= amount:
+                        print(f"Successfully fetched {len(formatted_questions)} questions from API")
+                        return formatted_questions
+                    else:
+                        print(f"Only got {len(formatted_questions)} unique questions, trying next strategy")
+                        continue
+                        
+            except requests.exceptions.Timeout:
+                print("Request timeout, trying next strategy")
+                continue
+            except requests.exceptions.RequestException as e:
+                print(f"Request error: {e}, trying next strategy")
+                continue
+            except Exception as e:
+                print(f"Unexpected error with strategy: {e}, trying next strategy")
+                continue
         
-        # Only add difficulty for non-math categories
-        if api_difficulty and category != 19:
-            url += f"&difficulty={api_difficulty}"
+        # If all strategies failed, return fallback questions
+        print("All API strategies failed, using fallback questions")
+        return get_fallback_questions(difficulty, amount)
         
-        response = requests.get(url, timeout=10)
-        
-        if response.status_code == 429:
-            import time
-            time.sleep(5)
-            response = requests.get(url, timeout=10)
-        
-        if response.status_code != 200:
-            return None
-        
-        data = response.json()
-        
-        if data['response_code'] != 0:
-            return None
-        
-        # Format questions and filter out previously shown ones
-        formatted_questions = []
-        skipped_count = 0
-        for q in data['results']:
+    except Exception as e:
+        print(f"Critical error in fetch_quiz_questions: {e}")
+        return get_fallback_questions(difficulty, amount)
+
+def process_api_questions(api_results, shown_hashes, user_id, difficulty, amount):
+    """Process API results into formatted questions"""
+    formatted_questions = []
+    skipped_count = 0
+    
+    for q in api_results:
+        try:
             # Decode HTML entities
             question_text = html.unescape(q['question'])
             question_hash = generate_question_hash(question_text)
@@ -480,6 +605,11 @@ def fetch_quiz_questions(amount=10, difficulty=None, category=None, user_id=None
             
             correct = html.unescape(q['correct_answer'])
             incorrect = [html.unescape(ans) for ans in q['incorrect_answers']]
+            
+            # Ensure we have 4 options
+            if len(incorrect) < 3:
+                print(f"Question has insufficient options, skipping: {question_text[:50]}...")
+                continue
             
             # Shuffle answers
             all_answers = [correct] + incorrect
@@ -498,31 +628,104 @@ def fetch_quiz_questions(amount=10, difficulty=None, category=None, user_id=None
                 'option_c': all_answers[2] if len(all_answers) > 2 else '',
                 'option_d': all_answers[3] if len(all_answers) > 3 else '',
                 'correct_answer': correct_letter,
-                'category': html.unescape(q['category']),
-                'difficulty': q['difficulty']
+                'category': html.unescape(q.get('category', 'General')),
+                'difficulty': q.get('difficulty', 'medium')
             })
             
             # Stop when we have enough unique questions
             if len(formatted_questions) >= amount:
                 break
-        
-        # Save questions to user history
-        if user_id:
+                
+        except Exception as e:
+            print(f"Error processing question: {e}")
+            continue
+    
+    # Save questions to user history
+    if user_id and formatted_questions:
+        try:
             for q in formatted_questions:
                 save_question_to_history(user_id, q['question_hash'], difficulty, q['category'])
-        
-        return formatted_questions if len(formatted_questions) > 0 else None
-        
-    except Exception as e:
-        print(f"Error fetching questions: {e}")
-        return None
+        except Exception as e:
+            print(f"Warning: Could not save questions to history: {e}")
+    
+    return formatted_questions
+
+def get_fallback_questions(difficulty, amount):
+    """Get fallback questions when API fails"""
+    if difficulty == 'easy':
+        base_questions = [
+            {'question': 'What is 2 + 3?', 'options': ['4', '5', '6', '7'], 'correct': 1},
+            {'question': 'What is 10 - 4?', 'options': ['5', '6', '7', '8'], 'correct': 1},
+            {'question': 'What is 3 × 2?', 'options': ['5', '6', '7', '8'], 'correct': 1},
+            {'question': 'What is 8 ÷ 2?', 'options': ['3', '4', '5', '6'], 'correct': 1},
+            {'question': 'What is 5 + 4?', 'options': ['8', '9', '10', '11'], 'correct': 1},
+            {'question': 'What is 12 - 5?', 'options': ['6', '7', '8', '9'], 'correct': 1},
+            {'question': 'What is 4 × 3?', 'options': ['10', '11', '12', '13'], 'correct': 2},
+            {'question': 'What is 15 ÷ 3?', 'options': ['4', '5', '6', '7'], 'correct': 1},
+            {'question': 'What is 6 + 7?', 'options': ['12', '13', '14', '15'], 'correct': 1},
+            {'question': 'What is 20 - 8?', 'options': ['11', '12', '13', '14'], 'correct': 1}
+        ]
+    elif difficulty == 'hard':
+        base_questions = [
+            {'question': 'What is 15² - 13²?', 'options': ['52', '56', '60', '64'], 'correct': 1},
+            {'question': 'What is √144?', 'options': ['11', '12', '13', '14'], 'correct': 1},
+            {'question': 'What is 7! ÷ 5!?', 'options': ['40', '42', '44', '46'], 'correct': 1},
+            {'question': 'What is log₂(64)?', 'options': ['5', '6', '7', '8'], 'correct': 1},
+            {'question': 'What is sin(90°)?', 'options': ['0', '1', '0.5', '-1'], 'correct': 1},
+            {'question': 'What is 3⁴?', 'options': ['79', '80', '81', '82'], 'correct': 2},
+            {'question': 'What is ∫x dx?', 'options': ['x²/2 + C', 'x² + C', '2x + C', 'x + C'], 'correct': 0},
+            {'question': 'What is the derivative of x³?', 'options': ['2x²', '3x²', '3x³', 'x²'], 'correct': 1},
+            {'question': 'What is 2⁵ × 2³?', 'options': ['254', '255', '256', '257'], 'correct': 2},
+            {'question': 'What is the value of π to 2 decimal places?', 'options': ['3.14', '3.15', '3.16', '3.17'], 'correct': 0}
+        ]
+    else:  # medium
+        base_questions = [
+            {'question': 'What is 15 + 27?', 'options': ['40', '41', '42', '43'], 'correct': 2},
+            {'question': 'What is 84 - 39?', 'options': ['43', '44', '45', '46'], 'correct': 2},
+            {'question': 'What is 12 × 8?', 'options': ['94', '95', '96', '97'], 'correct': 2},
+            {'question': 'What is 144 ÷ 12?', 'options': ['11', '12', '13', '14'], 'correct': 1},
+            {'question': 'What is 25% of 80?', 'options': ['18', '19', '20', '21'], 'correct': 2},
+            {'question': 'What is 7²?', 'options': ['47', '48', '49', '50'], 'correct': 2},
+            {'question': 'What is √81?', 'options': ['8', '9', '10', '11'], 'correct': 1},
+            {'question': 'What is 3/4 as a decimal?', 'options': ['0.70', '0.75', '0.80', '0.85'], 'correct': 1},
+            {'question': 'What is 2³ × 3²?', 'options': ['70', '71', '72', '73'], 'correct': 2},
+            {'question': 'What is the perimeter of a square with side 6?', 'options': ['22', '23', '24', '25'], 'correct': 2}
+        ]
+    
+    # Format fallback questions
+    formatted_questions = []
+    for i, q in enumerate(base_questions[:amount]):
+        formatted_questions.append({
+            'id': i + 1,
+            'question': q['question'],
+            'question_hash': generate_question_hash(q['question']),
+            'option_a': q['options'][0],
+            'option_b': q['options'][1],
+            'option_c': q['options'][2],
+            'option_d': q['options'][3],
+            'correct_answer': chr(97 + q['correct']),  # 'a', 'b', 'c', 'd'
+            'category': 'Mathematics',
+            'difficulty': difficulty or 'medium'
+        })
+    
+    return formatted_questions
+
+# Helper function to safely convert ELO to int
+def safe_elo_int(value, default=1000):
+    """Safely convert ELO rating to integer"""
+    try:
+        if value is None or value == '' or value == 'None':
+            return default
+        return int(value)
+    except (ValueError, TypeError, AttributeError):
+        return default
 
 # ELO Rating Calculator
 def calculate_elo(winner_rating, loser_rating, k_factor=32):
     """Calculate new ELO ratings after a match"""
     # Convert to int to ensure proper arithmetic operations
-    winner_rating = int(winner_rating) if winner_rating else 1000
-    loser_rating = int(loser_rating) if loser_rating else 1000
+    winner_rating = safe_elo_int(winner_rating)
+    loser_rating = safe_elo_int(loser_rating)
     
     expected_winner = 1 / (1 + 10 ** ((loser_rating - winner_rating) / 400))
     expected_loser = 1 / (1 + 10 ** ((winner_rating - loser_rating) / 400))
@@ -569,6 +772,121 @@ def get_quiz_categories():
         {'id': 22, 'name': 'Geography'}
     ]
 
+@app.route('/api/check_pending_match')
+def check_pending_match():
+    """Check if user has a pending match (has been challenged)"""
+    if 'user_id' not in session:
+        return jsonify({'has_match': False})
+    
+    user_id = session['user_id']
+    
+    try:
+        cursor = mysql.connection.cursor()
+        
+        # Check if user is in any pending or in_progress match
+        cursor.execute("""
+            SELECT m.id, m.player1_id, m.player2_id, u1.name as p1_name, u2.name as p2_name, m.status
+            FROM matches m
+            JOIN users u1 ON m.player1_id = u1.id
+            JOIN users u2 ON m.player2_id = u2.id
+            WHERE (m.player1_id = %s OR m.player2_id = %s)
+            AND m.status IN ('pending', 'in_progress')
+            ORDER BY m.created_at DESC
+            LIMIT 1
+        """, (user_id, user_id))
+        
+        match = cursor.fetchone()
+        cursor.close()
+        
+        if match:
+            match_id, p1_id, p2_id, p1_name, p2_name, status = match
+            opponent_name = p2_name if p1_id == user_id else p1_name
+            
+            print(f"[PENDING_MATCH] User {user_id} has pending match {match_id} with {opponent_name} (status: {status})")
+            
+            return jsonify({
+                'has_match': True,
+                'match_id': match_id,
+                'opponent_name': opponent_name
+            })
+        else:
+            return jsonify({'has_match': False})
+            
+    except Exception as e:
+        print(f"[PENDING_MATCH] Error checking for user {user_id}: {e}")
+        return jsonify({'has_match': False})
+
+@app.route('/quiz/challenge_player', methods=['POST'])
+def challenge_player():
+    """Create a match with a specific player (direct challenge)"""
+    if 'user_id' not in session:
+        return jsonify({'error': 'Not logged in'}), 401
+    
+    user_id = session['user_id']
+    
+    try:
+        data = request.get_json() or {}
+        opponent_id = data.get('opponent_id')
+        difficulty = data.get('difficulty', 'medium')
+        
+        if not opponent_id:
+            return jsonify({'error': 'Opponent ID required'}), 400
+        
+        # Store difficulty in session
+        session['quiz_difficulty'] = difficulty
+        
+        cursor = mysql.connection.cursor()
+        
+        # Get both players' ELO
+        cursor.execute("SELECT elo_rating FROM users WHERE id=%s", (user_id,))
+        result = cursor.fetchone()
+        user_elo = safe_elo_int(result[0] if result else None)
+        
+        cursor.execute("SELECT elo_rating, name FROM users WHERE id=%s", (opponent_id,))
+        result = cursor.fetchone()
+        if not result:
+            cursor.close()
+            return jsonify({'error': 'Opponent not found'}), 404
+        
+        opponent_elo = safe_elo_int(result[0])
+        
+        opponent_name = result[1]
+        
+        # Check if opponent is already in a match
+        cursor.execute("""
+            SELECT id FROM matches 
+            WHERE (player1_id = %s OR player2_id = %s) 
+            AND status IN ('pending', 'in_progress')
+        """, (opponent_id, opponent_id))
+        
+        if cursor.fetchone():
+            cursor.close()
+            return jsonify({'error': f'{opponent_name} is already in a match'}), 400
+        
+        # Create new match
+        cursor.execute("""
+            INSERT INTO matches (player1_id, player2_id, player1_elo_before, player2_elo_before, status)
+            VALUES (%s, %s, %s, %s, 'in_progress')
+        """, (user_id, opponent_id, user_elo, opponent_elo))
+        
+        match_id = cursor.lastrowid
+        mysql.connection.commit()
+        cursor.close()
+        
+        print(f"[CHALLENGE] User {user_id} challenged {opponent_id} (match {match_id})")
+        
+        return jsonify({
+            'match_id': match_id,
+            'opponent_name': opponent_name,
+            'opponent_elo': opponent_elo
+        })
+        
+    except Exception as e:
+        print(f"Error creating challenge: {e}")
+        if 'cursor' in locals():
+            cursor.close()
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/quiz/matchmaking', methods=['GET', 'POST'])
 def matchmaking():
     """Find opponent and start match"""
@@ -591,35 +909,42 @@ def matchmaking():
             # Get current user's ELO
             cursor.execute("SELECT elo_rating FROM users WHERE id=%s", (user_id,))
             result = cursor.fetchone()
-            try:
-                user_elo = int(result[0]) if result and result[0] not in (None, '', 'None') else 1000
-            except (ValueError, TypeError):
-                user_elo = 1000
+            user_elo = safe_elo_int(result[0] if result else None)
             
-            # Find available opponent (not in active match, similar ELO)
+            # Find available opponent with improved matching algorithm
+            # Priority: Similar ELO, recent activity, win rate balance
             cursor.execute("""
-                SELECT id, name, COALESCE(elo_rating, 1000) as elo_rating FROM users 
+                SELECT id, name, 
+                       COALESCE(elo_rating, 1000) as elo_rating,
+                       COALESCE(matches_played, 0) as matches_played,
+                       COALESCE(matches_won, 0) as matches_won
+                FROM users 
                 WHERE id != %s 
                 AND id NOT IN (
                     SELECT player1_id FROM matches WHERE status IN ('pending', 'in_progress')
                     UNION
                     SELECT player2_id FROM matches WHERE status IN ('pending', 'in_progress')
                 )
-                ORDER BY ABS(COALESCE(elo_rating, 1000) - %s) ASC
-                LIMIT 1
+                ORDER BY 
+                    ABS(COALESCE(elo_rating, 1000) - %s) ASC,
+                    matches_played DESC
+                LIMIT 5
             """, (user_id, user_elo))
             
-            opponent = cursor.fetchone()
+            opponents = cursor.fetchall()
             
-            if not opponent:
+            if not opponents:
                 cursor.close()
-                return jsonify({'error': 'No opponents available'}), 404
+                return jsonify({'error': 'No opponents available. Try again later!'}), 404
             
-            opponent_id, opponent_name, opponent_elo = opponent
-            try:
-                opponent_elo = int(opponent_elo) if opponent_elo not in (None, '', 'None') else 1000
-            except (ValueError, TypeError):
-                opponent_elo = 1000
+            # Select best opponent from top 5 (randomize for variety)
+            opponent = random.choice(opponents[:min(3, len(opponents))])
+            
+            opponent_id, opponent_name, opponent_elo, opp_matches, opp_wins = opponent
+            opponent_elo = safe_elo_int(opponent_elo)
+            
+            # Calculate opponent stats
+            opp_win_rate = round((opp_wins / opp_matches * 100), 1) if opp_matches > 0 else 0
             
             # Create new match
             cursor.execute("""
@@ -634,7 +959,11 @@ def matchmaking():
             return jsonify({
                 'match_id': match_id,
                 'opponent_name': opponent_name,
-                'opponent_elo': opponent_elo
+                'opponent_elo': opponent_elo,
+                'opponent_matches': opp_matches,
+                'opponent_wins': opp_wins,
+                'opponent_win_rate': opp_win_rate,
+                'elo_difference': abs(user_elo - opponent_elo)
             })
             
         except Exception as e:
@@ -691,25 +1020,18 @@ def quiz_match(match_id):
         # User "medium" → API "medium" (moderate questions for 6-8th standard)
         # User "hard" → API "hard" (advanced questions for 9-12th standard)
         
-        api_difficulty = map_difficulty_to_api(difficulty)
+        print(f"Fetching questions for match {match_id}, difficulty: {difficulty}, user: {user_id}")
         
         # Fetch from API - each call gets unique questions (no repeats for this user)
         questions = fetch_quiz_questions(amount=10, difficulty=difficulty, category=19, user_id=user_id)
         
-        # If API fails, use fallback questions
-        if not questions:
-            questions = [
-                {'id': 1, 'question': 'What is 5 + 3?', 'option_a': '6', 'option_b': '7', 'option_c': '8', 'option_d': '9', 'correct_answer': 'c'},
-                {'id': 2, 'question': 'What is 10 - 4?', 'option_a': '5', 'option_b': '6', 'option_c': '7', 'option_d': '8', 'correct_answer': 'b'},
-                {'id': 3, 'question': 'What is 3 × 4?', 'option_a': '10', 'option_b': '11', 'option_c': '12', 'option_d': '13', 'correct_answer': 'c'},
-                {'id': 4, 'question': 'What is 20 ÷ 5?', 'option_a': '3', 'option_b': '4', 'option_c': '5', 'option_d': '6', 'correct_answer': 'b'},
-                {'id': 5, 'question': 'What is 7 + 8?', 'option_a': '14', 'option_b': '15', 'option_c': '16', 'option_d': '17', 'correct_answer': 'b'},
-                {'id': 6, 'question': 'What is 15 - 7?', 'option_a': '6', 'option_b': '7', 'option_c': '8', 'option_d': '9', 'correct_answer': 'c'},
-                {'id': 7, 'question': 'What is 6 × 7?', 'option_a': '40', 'option_b': '41', 'option_c': '42', 'option_d': '43', 'correct_answer': 'c'},
-                {'id': 8, 'question': 'What is 36 ÷ 6?', 'option_a': '5', 'option_b': '6', 'option_c': '7', 'option_d': '8', 'correct_answer': 'b'},
-                {'id': 9, 'question': 'What is 9 + 6?', 'option_a': '13', 'option_b': '14', 'option_c': '15', 'option_d': '16', 'correct_answer': 'c'},
-                {'id': 10, 'question': 'What is 25 - 10?', 'option_a': '13', 'option_b': '14', 'option_c': '15', 'option_d': '16', 'correct_answer': 'c'}
-            ]
+        # Validate questions
+        if not questions or len(questions) == 0:
+            print("ERROR: No questions returned from fetch_quiz_questions")
+            flash('error: Unable to load questions. Please try again.', 'error')
+            return redirect(url_for('quiz_home'))
+        
+        print(f"Successfully loaded {len(questions)} questions for match {match_id}")
         
         # Store questions in session for answer validation
         session[f'match_{match_id}_questions'] = {q['id']: q['correct_answer'] for q in questions}
@@ -775,38 +1097,86 @@ def complete_match(match_id):
     if 'user_id' not in session:
         return jsonify({'error': 'Not logged in'}), 401
 
+    user_id = session['user_id']
+
     try:
         cursor = mysql.connection.cursor()
 
-        # Fetch match
-        cursor.execute("""
-            SELECT player1_id, player2_id, player1_elo_before, player2_elo_before, status
-            FROM matches 
-            WHERE id=%s
-        """, (match_id,))
-        
-        match = cursor.fetchone()
-        if not match:
-            cursor.close()
-            return jsonify({'error': 'Match not found'}), 404
+        # Fetch match with lock to prevent race conditions
+        # Try with new columns first, fallback to old schema if columns don't exist
+        try:
+            cursor.execute("""
+                SELECT player1_id, player2_id, player1_elo_before, player2_elo_before, status,
+                       player1_completed, player2_completed
+                FROM matches 
+                WHERE id=%s FOR UPDATE
+            """, (match_id,))
+            
+            match = cursor.fetchone()
+            if not match:
+                cursor.close()
+                return jsonify({'error': 'Match not found'}), 404
 
-        player1_id, player2_id, p1_elo, p2_elo, status = match
+            player1_id, player2_id, p1_elo, p2_elo, status, p1_completed, p2_completed = match
+        except Exception as e:
+            # Columns don't exist - use old behavior
+            print(f"[WARNING] Synchronized quiz columns not found: {e}")
+            print("[WARNING] Run setup_synchronized_quiz.bat to enable synchronized quiz feature")
+            cursor.execute("""
+                SELECT player1_id, player2_id, player1_elo_before, player2_elo_before, status
+                FROM matches 
+                WHERE id=%s FOR UPDATE
+            """, (match_id,))
+            
+            match = cursor.fetchone()
+            if not match:
+                cursor.close()
+                return jsonify({'error': 'Match not found'}), 404
+
+            player1_id, player2_id, p1_elo, p2_elo, status = match
+            p1_completed = False
+            p2_completed = False
 
         # Normalize ELO values
-        try:
-            p1_elo = int(p1_elo) if p1_elo not in (None, '', 'None') else 1000
-        except:
-            p1_elo = 1000
-
-        try:
-            p2_elo = int(p2_elo) if p2_elo not in (None, '', 'None') else 1000
-        except:
-            p2_elo = 1000
+        p1_elo = safe_elo_int(p1_elo)
+        p2_elo = safe_elo_int(p2_elo)
 
         if status == 'completed':
             cursor.close()
-            return jsonify({'error': 'Match already completed'}), 400
+            return jsonify({'status': 'completed', 'message': 'Match already completed'})
 
+        # Mark this player as completed (only if columns exist)
+        try:
+            if user_id == player1_id:
+                cursor.execute("""
+                    UPDATE matches 
+                    SET player1_completed=TRUE, player1_completed_at=NOW()
+                    WHERE id=%s
+                """, (match_id,))
+                p1_completed = True
+            elif user_id == player2_id:
+                cursor.execute("""
+                    UPDATE matches 
+                    SET player2_completed=TRUE, player2_completed_at=NOW()
+                    WHERE id=%s
+                """, (match_id,))
+                p2_completed = True
+
+            mysql.connection.commit()
+
+            # Check if BOTH players have completed
+            if not (p1_completed and p2_completed):
+                cursor.close()
+                return jsonify({
+                    'status': 'waiting',
+                    'message': 'Waiting for opponent to finish'
+                })
+        except Exception as e:
+            # Columns don't exist - skip to immediate completion (old behavior)
+            print(f"[WARNING] Cannot update completion status: {e}")
+            pass
+
+        # BOTH players completed - calculate results
         # Fetch scores
         cursor.execute("""
             SELECT player_id, COUNT(*) 
@@ -825,13 +1195,10 @@ def complete_match(match_id):
         if p1_score > p2_score:
             winner_id = player1_id
             p1_elo_new, p2_elo_new = calculate_elo(p1_elo, p2_elo)
-
         elif p2_score > p1_score:
             winner_id = player2_id
             p2_elo_new, p1_elo_new = calculate_elo(p2_elo, p1_elo)
-
         else:
-            # Tie — no ELO change
             winner_id = None
             p1_elo_new = p1_elo
             p2_elo_new = p2_elo
@@ -876,6 +1243,7 @@ def complete_match(match_id):
         cursor.close()
 
         return jsonify({
+            'status': 'completed',
             'winner_id': winner_id,
             'player1_score': p1_score,
             'player2_score': p2_score,
@@ -886,6 +1254,65 @@ def complete_match(match_id):
     except Exception as e:
         if 'cursor' in locals():
             cursor.close()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/quiz/check_match_status/<int:match_id>')
+def check_match_status(match_id):
+    """Check if both players have completed the match"""
+    if 'user_id' not in session:
+        return jsonify({'error': 'Not logged in'}), 401
+    
+    try:
+        cursor = mysql.connection.cursor()
+        
+        # Try with new columns first
+        try:
+            cursor.execute("""
+                SELECT status, player1_completed, player2_completed
+                FROM matches
+                WHERE id=%s
+            """, (match_id,))
+            
+            result = cursor.fetchone()
+            cursor.close()
+            
+            if not result:
+                return jsonify({'error': 'Match not found'}), 404
+            
+            status, p1_completed, p2_completed = result
+            
+            if status == 'completed':
+                return jsonify({'status': 'completed'})
+            elif p1_completed and p2_completed:
+                return jsonify({'status': 'completed'})
+            else:
+                return jsonify({
+                    'status': 'waiting',
+                    'player1_completed': bool(p1_completed),
+                    'player2_completed': bool(p2_completed)
+                })
+        except Exception as col_error:
+            # Columns don't exist - check status only
+            cursor.execute("""
+                SELECT status
+                FROM matches
+                WHERE id=%s
+            """, (match_id,))
+            
+            result = cursor.fetchone()
+            cursor.close()
+            
+            if not result:
+                return jsonify({'error': 'Match not found'}), 404
+            
+            status = result[0]
+            
+            if status == 'completed':
+                return jsonify({'status': 'completed'})
+            else:
+                return jsonify({'status': 'waiting'})
+    
+    except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 @app.route('/quiz/results/<int:match_id>')
@@ -900,9 +1327,12 @@ def match_results(match_id):
     try:
         cursor = mysql.connection.cursor()
         
-        # Get match details with player names
+        # Get match details with player names - explicitly select columns in known order
         cursor.execute("""
-            SELECT m.*, 
+            SELECT m.id, m.player1_id, m.player2_id, m.player1_score, m.player2_score,
+                   m.winner_id, m.player1_elo_before, m.player2_elo_before,
+                   m.player1_elo_after, m.player2_elo_after, m.status,
+                   m.created_at, m.completed_at,
                    u1.name as player1_name, u2.name as player2_name
             FROM matches m
             JOIN users u1 ON m.player1_id = u1.id
@@ -917,11 +1347,103 @@ def match_results(match_id):
             flash('error: Match not found', 'error')
             return redirect(url_for('quiz_home'))
         
-        return render_template('match_results.html', match=match, user_id=user_id)
+        # Convert match tuple to list for easier manipulation
+        match_list = list(match)
+        
+        # Match structure (explicitly selected columns):
+        # [0] id, [1] player1_id, [2] player2_id, [3] player1_score, [4] player2_score,
+        # [5] winner_id, [6] player1_elo_before, [7] player2_elo_before, [8] player1_elo_after,
+        # [9] player2_elo_after, [10] status, [11] created_at, [12] completed_at,
+        # [13] player1_name, [14] player2_name
+        
+        print(f"[RESULTS] Raw match data: {match_list}")
+        print(f"[RESULTS] Match data length: {len(match_list)}")
+        
+        # Debug: Print all indices to find where names are
+        for i, value in enumerate(match_list):
+            print(f"[RESULTS] Index {i}: {value} (type: {type(value).__name__})")
+        
+        # Convert scores to int (indices 3, 4)
+        if len(match_list) > 3:
+            match_list[3] = safe_elo_int(match_list[3], 0)  # player1_score
+        if len(match_list) > 4:
+            match_list[4] = safe_elo_int(match_list[4], 0)  # player2_score
+        
+        # Convert winner_id to int (index 5) - keep None as None for draws
+        if len(match_list) > 5:
+            if match_list[5] is not None and match_list[5] != '':
+                try:
+                    match_list[5] = int(match_list[5])
+                except:
+                    match_list[5] = None
+            else:
+                match_list[5] = None
+        
+        # Convert ELO values to int (indices: 6, 7, 8, 9)
+        if len(match_list) > 6:
+            match_list[6] = safe_elo_int(match_list[6])  # player1_elo_before
+        if len(match_list) > 7:
+            match_list[7] = safe_elo_int(match_list[7])  # player2_elo_before
+        if len(match_list) > 8:
+            match_list[8] = safe_elo_int(match_list[8])  # player1_elo_after
+        if len(match_list) > 9:
+            match_list[9] = safe_elo_int(match_list[9])  # player2_elo_after
+        
+        # Calculate match duration in minutes (indices 11=created_at, 12=completed_at)
+        match_duration = 'N/A'
+        try:
+            if len(match_list) > 12 and match_list[11] and match_list[12]:
+                from datetime import datetime
+                created = match_list[11]
+                completed = match_list[12]
+                if isinstance(created, datetime) and isinstance(completed, datetime):
+                    duration_seconds = (completed - created).total_seconds()
+                    match_duration = round(duration_seconds / 60, 1)
+        except Exception as e:
+            print(f"[RESULTS] Error calculating duration: {e}")
+            match_duration = 'N/A'
+        
+        # Convert back to tuple
+        match = tuple(match_list)
+        
+        print(f"[RESULTS] Converted match data: {match}")
+        print(f"[RESULTS] Match duration: {match_duration} minutes")
+        
+        # Debug: Print match data
+        print(f"[RESULTS] Match data length: {len(match)}")
+        print(f"[RESULTS] Match data: {match}")
+        print(f"[RESULTS] User ID: {user_id}")
+        
+        try:
+            return render_template('match_results.html', match=match, user_id=int(user_id), match_duration=match_duration)
+        except Exception as template_error:
+            print(f"[RESULTS] Template rendering error: {template_error}")
+            import traceback
+            traceback.print_exc()
+            # Return a simple error page instead of redirecting
+            return f"""
+            <html>
+            <head><title>Error</title></head>
+            <body style="font-family: Arial; padding: 40px; background: #f5f5f5;">
+                <div style="background: white; padding: 30px; border-radius: 10px; max-width: 600px; margin: 0 auto;">
+                    <h1 style="color: #dc3545;">⚠️ Error Loading Results</h1>
+                    <p><strong>Error:</strong> {str(template_error)}</p>
+                    <p><strong>Match ID:</strong> {match_id}</p>
+                    <p><strong>Match Data Length:</strong> {len(match)}</p>
+                    <p><strong>Match Data:</strong> {match}</p>
+                    <hr>
+                    <a href="/quiz" style="display: inline-block; padding: 10px 20px; background: #6200ff; color: white; text-decoration: none; border-radius: 5px;">Back to Quiz Home</a>
+                </div>
+            </body>
+            </html>
+            """, 500
         
     except Exception as e:
         if 'cursor' in locals():
             cursor.close()
+        print(f"[RESULTS] Database error: {e}")
+        import traceback
+        traceback.print_exc()
         flash(f'error: {str(e)}', 'error')
         return redirect(url_for('quiz_home'))
 
@@ -1025,23 +1547,344 @@ def api_leaderboard():
 @app.route('/api/quiz/questions')
 def api_quiz_questions():
     """API endpoint to fetch quiz questions"""
-    amount = request.args.get('amount', 10, type=int)
-    difficulty = request.args.get('difficulty', None)
-    category = request.args.get('category', None)
-    user_id = session.get('user_id', None)
-    
-    questions = fetch_quiz_questions(amount, difficulty, category, user_id)
-    
-    if questions:
-        return jsonify({'success': True, 'questions': questions})
-    else:
-        return jsonify({'success': False, 'error': 'Failed to fetch questions'}), 500
+    try:
+        amount = request.args.get('amount', 10, type=int)
+        difficulty = request.args.get('difficulty', None)
+        category = request.args.get('category', None)
+        user_id = session.get('user_id', None)
+        
+        # Validate amount
+        if amount < 1 or amount > 50:
+            amount = 10
+        
+        questions = fetch_quiz_questions(amount, difficulty, category, user_id)
+        
+        if questions and len(questions) > 0:
+            return jsonify({
+                'success': True, 
+                'questions': questions,
+                'count': len(questions),
+                'source': 'api' if any('opentdb' in q.get('category', '') for q in questions) else 'fallback'
+            })
+        else:
+            # This should never happen now since we have fallback questions
+            fallback_questions = get_fallback_questions(difficulty, amount)
+            return jsonify({
+                'success': True, 
+                'questions': fallback_questions,
+                'count': len(fallback_questions),
+                'source': 'emergency_fallback'
+            })
+            
+    except Exception as e:
+        print(f"Error in api_quiz_questions: {e}")
+        # Emergency fallback
+        try:
+            fallback_questions = get_fallback_questions('medium', 10)
+            return jsonify({
+                'success': True, 
+                'questions': fallback_questions,
+                'count': len(fallback_questions),
+                'source': 'error_fallback'
+            })
+        except Exception as fallback_error:
+            print(f"Even fallback failed: {fallback_error}")
+            return jsonify({'success': False, 'error': 'Critical error: Unable to provide questions'}), 500
 
 @app.route('/api/quiz/categories')
 def api_quiz_categories():
     """API endpoint to get quiz categories"""
     categories = get_quiz_categories()
     return jsonify({'categories': categories})
+
+@app.route('/test/online')
+def test_online_page():
+    """Test page for online players feature"""
+    return render_template('test_online.html')
+
+@app.route('/debug/online')
+def debug_online_players():
+    """Debug endpoint to see who's in the online_players dict"""
+    print(f"[DEBUG] Checking online_players dict - Total: {len(online_players)}")
+    
+    result = {
+        'total_online': len(online_players),
+        'players': {
+            str(k): {
+                'name': v['name'],
+                'difficulty': v['difficulty'],
+                'elo': v['elo'],
+                'seconds_ago': int((datetime.now() - v['timestamp']).total_seconds())
+            }
+            for k, v in online_players.items()
+        }
+    }
+    
+    print(f"[DEBUG] Players: {list(result['players'].keys())}")
+    return jsonify(result)
+
+@app.route('/api/online_players')
+def api_online_players():
+    """Get players currently online and looking for matches (in-memory solution)"""
+    if 'user_id' not in session:
+        print("[ONLINE_PLAYERS] User not logged in")
+        return jsonify({'error': 'Not logged in'}), 401
+    
+    user_id = session['user_id']
+    difficulty = request.args.get('difficulty', 'medium')
+    
+    print(f"[ONLINE_PLAYERS] User {user_id} checking for players at difficulty: {difficulty}")
+    
+    try:
+        cursor = mysql.connection.cursor()
+        
+        # Get current user's info
+        cursor.execute("""
+            SELECT name, COALESCE(elo_rating, 1000) as elo_rating,
+                   COALESCE(matches_played, 0) as matches_played,
+                   COALESCE(matches_won, 0) as matches_won
+            FROM users WHERE id=%s
+        """, (user_id,))
+        user_result = cursor.fetchone()
+        
+        if not user_result:
+            cursor.close()
+            return jsonify({'error': 'User not found'}), 404
+        
+        user_name, user_elo, user_matches, user_wins = user_result
+        user_elo = safe_elo_int(user_elo)
+        
+        # Update current user in online_players dict
+        online_players[user_id] = {
+            'difficulty': difficulty,
+            'timestamp': datetime.now(),
+            'name': user_name,
+            'elo': user_elo,
+            'matches': user_matches,
+            'wins': user_wins
+        }
+        
+        print(f"[ONLINE_PLAYERS] Added user {user_id} ({user_name}) to online_players")
+        print(f"[ONLINE_PLAYERS] Total online now: {len(online_players)}")
+        
+        # Clean up old entries (older than 2 minutes)
+        current_time = datetime.now()
+        expired_users = []
+        for uid, data in online_players.items():
+            if (current_time - data['timestamp']).total_seconds() > 120:  # 2 minutes
+                expired_users.append(uid)
+        
+        for uid in expired_users:
+            del online_players[uid]
+        
+        # Get players at same difficulty (excluding current user and those in active matches)
+        cursor.execute("""
+            SELECT player1_id FROM matches WHERE status IN ('pending', 'in_progress')
+            UNION
+            SELECT player2_id FROM matches WHERE status IN ('pending', 'in_progress')
+        """)
+        in_match_ids = [row[0] for row in cursor.fetchall()]
+        cursor.close()
+        
+        # Build list of available online players
+        available_players = []
+        print(f"[ONLINE_PLAYERS] Checking {len(online_players)} total players")
+        print(f"[ONLINE_PLAYERS] Current user: {user_id}, Looking for difficulty: {difficulty}")
+        print(f"[ONLINE_PLAYERS] Players in matches: {in_match_ids}")
+        
+        for uid, data in online_players.items():
+            print(f"[ONLINE_PLAYERS] Checking player {uid}: difficulty={data['difficulty']}, in_match={uid in in_match_ids}")
+            if uid != user_id and data['difficulty'] == difficulty and uid not in in_match_ids:
+                # Ensure elo is int for calculation
+                player_elo = safe_elo_int(data.get('elo'))
+                elo_diff = abs(user_elo - player_elo)
+                
+                # Determine match quality
+                if elo_diff <= 50:
+                    match_quality = 'perfect'
+                elif elo_diff <= 100:
+                    match_quality = 'close'
+                else:
+                    match_quality = 'challenge'
+                
+                win_rate = round((data['wins'] / data['matches'] * 100), 1) if data['matches'] > 0 else 0
+                
+                available_players.append({
+                    'id': uid,
+                    'name': data['name'],
+                    'elo_rating': data['elo'],
+                    'matches_played': data['matches'],
+                    'matches_won': data['wins'],
+                    'win_rate': win_rate,
+                    'elo_difference': elo_diff,
+                    'match_quality': match_quality,
+                    'seconds_ago': int((current_time - data['timestamp']).total_seconds())
+                })
+        
+        # Sort by ELO similarity
+        available_players.sort(key=lambda x: x['elo_difference'])
+        
+        print(f"[ONLINE_PLAYERS] Found {len(available_players)} available players at {difficulty}")
+        for player in available_players[:3]:  # Show first 3
+            print(f"  - {player['name']} (ELO: {player['elo_rating']}, Quality: {player['match_quality']})")
+        
+        return jsonify({
+            'players': available_players[:10],  # Limit to 10
+            'count': len(available_players),
+            'difficulty': difficulty
+        })
+        
+    except Exception as e:
+        print(f"Error getting online players: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/challenge/send', methods=['POST'])
+def send_challenge():
+   
+    """Mark match as completed if user leaves/abandons it"""
+    if 'user_id' not in session:
+        return jsonify({'error': 'Not logged in'}), 401
+    
+    user_id = session['user_id']
+    
+    try:
+        cursor = mysql.connection.cursor()
+        
+        # Check if user is part of this match
+        cursor.execute("""
+            SELECT id, player1_id, player2_id, status, player1_score, player2_score
+            FROM matches 
+            WHERE id = %s AND (player1_id = %s OR player2_id = %s)
+        """, (match_id, user_id, user_id))
+        
+        match = cursor.fetchone()
+        
+        if not match:
+            cursor.close()
+            return jsonify({'error': 'Match not found'}), 404
+        
+        match_id, p1_id, p2_id, status, p1_score, p2_score = match
+        
+        # Only mark as completed if still in progress
+        if status in ('pending', 'in_progress'):
+            # Determine winner based on current scores (or mark as abandoned)
+            if p1_score is None:
+                p1_score = 0
+            if p2_score is None:
+                p2_score = 0
+            
+            if p1_score > p2_score:
+                winner_id = p1_id
+            elif p2_score > p1_score:
+                winner_id = p2_id
+            else:
+                winner_id = None  # Draw
+            
+            # Mark match as completed
+            cursor.execute("""
+                UPDATE matches 
+                SET status = 'completed', 
+                    completed_at = NOW(),
+                    winner_id = %s
+                WHERE id = %s
+            """, (winner_id, match_id))
+            
+            mysql.connection.commit()
+            print(f"[ABANDON] Match {match_id} marked as completed (user {user_id} left)")
+        
+        cursor.close()
+        return jsonify({'success': True, 'message': 'Match completed'})
+        
+    except Exception as e:
+        print(f"Error abandoning match: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/recent_opponents')
+def api_recent_opponents():
+    """Get recent opponents for the current user"""
+    if 'user_id' not in session:
+        return jsonify({'error': 'Not logged in'}), 401
+    
+    user_id = session['user_id']
+    
+    try:
+        cursor = mysql.connection.cursor()
+        
+        # Get recent matches with opponent details
+        cursor.execute("""
+            SELECT 
+                m.id as match_id,
+                CASE 
+                    WHEN m.player1_id = %s THEN u2.name
+                    ELSE u1.name
+                END as opponent_name,
+                CASE 
+                    WHEN m.player1_id = %s THEN COALESCE(u2.elo_rating, 1000)
+                    ELSE COALESCE(u1.elo_rating, 1000)
+                END as opponent_elo,
+                CASE 
+                    WHEN m.player1_id = %s THEN m.player1_score
+                    ELSE m.player2_score
+                END as your_score,
+                CASE 
+                    WHEN m.player1_id = %s THEN m.player2_score
+                    ELSE m.player1_score
+                END as opponent_score,
+                CASE 
+                    WHEN (m.player1_id = %s AND m.player1_score > m.player2_score) OR 
+                         (m.player2_id = %s AND m.player2_score > m.player1_score) THEN 'won'
+                    WHEN m.player1_score = m.player2_score THEN 'draw'
+                    ELSE 'lost'
+                END as result,
+                m.completed_at,
+                TIMESTAMPDIFF(HOUR, m.completed_at, NOW()) as hours_ago,
+                TIMESTAMPDIFF(DAY, m.completed_at, NOW()) as days_ago
+            FROM matches m
+            JOIN users u1 ON m.player1_id = u1.id
+            JOIN users u2 ON m.player2_id = u2.id
+            WHERE (m.player1_id = %s OR m.player2_id = %s)
+            AND m.status = 'completed'
+            AND m.completed_at IS NOT NULL
+            ORDER BY m.completed_at DESC
+            LIMIT 6
+        """, (user_id, user_id, user_id, user_id, user_id, user_id, user_id, user_id))
+        
+        matches = cursor.fetchall()
+        cursor.close()
+        
+        opponents = []
+        for match in matches:
+            match_id, opponent_name, opponent_elo, your_score, opponent_score, result, completed_at, hours_ago, days_ago = match
+            
+            # Default to 10 questions if not stored
+            total_questions = 10
+            
+            # Format time ago
+            if days_ago > 0:
+                time_ago = f"{days_ago} day{'s' if days_ago > 1 else ''} ago"
+            elif hours_ago > 0:
+                time_ago = f"{hours_ago} hour{'s' if hours_ago > 1 else ''} ago"
+            else:
+                time_ago = "Less than an hour ago"
+            
+            opponents.append({
+                'match_id': match_id,
+                'name': opponent_name,
+                'elo_rating': int(opponent_elo),
+                'your_score': int(your_score) if your_score else 0,
+                'opponent_score': int(opponent_score) if opponent_score else 0,
+                'total_questions': int(total_questions) if total_questions else 10,
+                'result': result,
+                'time_ago': time_ago
+            })
+        
+        return jsonify({'opponents': opponents})
+        
+    except Exception as e:
+        print(f"Error getting recent opponents: {e}")
+        return jsonify({'error': str(e)}), 500
 
 # ============ ADMIN UTILITIES ============
 
@@ -1264,5 +2107,27 @@ def admin_test_api():
     return jsonify(results)
 
 if __name__=='__main__':
-    app.run(host='0.0.0.0', port=5000)
+    # Clean up stuck matches on startup
+    try:
+        cursor = mysql.connection.cursor()
+        cursor.execute("""
+            UPDATE matches 
+            SET status='completed', completed_at=NOW()
+            WHERE status IN ('pending', 'in_progress')
+            AND (created_at < DATE_SUB(NOW(), INTERVAL 1 HOUR) OR created_at IS NULL)
+        """)
+        stuck_count = cursor.rowcount
+        mysql.connection.commit()
+        cursor.close()
+        if stuck_count > 0:
+            print(f"[STARTUP] Cleaned up {stuck_count} stuck matches")
+        else:
+            print("[STARTUP] No stuck matches found")
+    except Exception as e:
+        print(f"[STARTUP] Error cleaning matches: {e}")
+    
+    print("[STARTUP] Starting Flask server...")
+    print("[STARTUP] Debug mode: ON - Auto-reload enabled")
+    print("[STARTUP] Static file caching: DISABLED")
+    app.run(host='0.0.0.0', port=5000, debug=True)
     """Test template rendering (Admin only)"""

@@ -1,16 +1,6 @@
 {% extends 'app.html' %}
+{% block title %}Leaderboard - Learnico{% endblock %}
 {% block content %}
-
-<div class="header-section">
-    <div class="dashboard-navbar">
-        <div class="nav-brand">🏆 Leaderboard</div>
-        <div class="nav-links">
-            <a href="/Dashboard" class="nav-link">Dashboard</a>
-            <a href="/quiz" class="nav-link">Play Quiz</a>
-            <a href="/profile" class="nav-link profile-icon">👤</a>
-        </div>
-    </div>
-</div>
 
 <div class="container" style="margin-top: 20px;">
     <div class="leaderboard-header">
@@ -211,5 +201,40 @@
     }
 }
 </style>
+
+<script>
+// Comprehensive back button and swipe prevention
+(function() {
+    // Replace current history entry
+    if (window.history && window.history.replaceState) {
+        window.history.replaceState(null, null, window.location.href);
+    }
+    
+    // Prevent back navigation
+    window.addEventListener('popstate', function(event) {
+        window.history.pushState(null, null, window.location.href);
+    });
+    
+    // Push initial state
+    window.history.pushState(null, null, window.location.href);
+})();
+
+// Prevent page from being cached
+window.addEventListener('pageshow', function(event) {
+    if (event.persisted) {
+        window.location.reload();
+    }
+});
+
+// Prevent swipe gestures from navigating back
+window.addEventListener('load', function() {
+    window.history.pushState(null, null, window.location.href);
+});
+
+// Additional protection against back navigation
+window.onbeforeunload = function() {
+    window.history.pushState(null, null, window.location.href);
+};
+</script>
 
 {% endblock %}

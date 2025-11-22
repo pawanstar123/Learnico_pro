@@ -1,8 +1,12 @@
 {% extends 'app.html' %}
+{% block title %}Quiz Match - Learnico{% endblock %}
 {% block content %}
 
 <div class="quiz-match-container">
     <div class="match-header">
+        <button class="back-btn" onclick="attemptLeaveQuiz()" title="Leave Quiz">
+            ← Back
+        </button>
         <div class="timer" id="timer">⏱️ 30</div>
         <div class="question-counter">
             <span id="current-q">1</span> / <span id="total-q">{{ questions|length }}</span>
@@ -18,6 +22,56 @@
         <h2>Match Complete! 🎉</h2>
         <p>Calculating results...</p>
         <div class="loading-spinner">🔄</div>
+    </div>
+    
+    <!-- Waiting for Opponent Screen -->
+    <div class="waiting-screen" id="waiting-screen" style="display:none;">
+        <div class="waiting-container">
+            <div class="waiting-icon">⏳</div>
+            <h2>Waiting for Opponent</h2>
+            <p class="waiting-message">Your opponent is still completing the quiz...</p>
+            <div class="loading-dots">
+                <span></span><span></span><span></span>
+            </div>
+            <p class="waiting-info">Results will appear when both players finish</p>
+            <div class="waiting-stats">
+                <div class="stat-item">
+                    <div class="stat-label">Your Score</div>
+                    <div class="stat-value" id="your-score">-</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+</div>
+
+<!-- Leave Quiz Confirmation Modal -->
+<div id="leaveModal" class="modal-overlay" style="display:none;">
+    <div class="modal-card">
+        <div class="modal-icon">⚠️</div>
+        <h2 class="modal-title">Leave Quiz?</h2>
+        <p class="modal-message">
+            You are about to lose all your progress!<br>
+            This action cannot be undone.
+        </p>
+        <div class="modal-actions">
+            <button class="modal-btn modal-btn-primary" onclick="resumeQuiz()">Resume Quiz</button>
+            <button class="modal-btn modal-btn-danger" onclick="confirmLeave()">Leave Anyway</button>
+        </div>
+    </div>
+</div>
+
+
+
+<!-- Themed Error Modal -->
+<div class="modal-overlay" id="themedModal" style="display: none;">
+    <div class="themed-modal" id="modalContent">
+        <div class="modal-icon" id="modalIcon">ℹ️</div>
+        <h3 class="modal-title" id="modalTitle">Notification</h3>
+        <p class="modal-message" id="modalMessage">Message content</p>
+        <div class="modal-buttons" id="modalButtons">
+            <button class="modal-btn primary" onclick="closeThemedModal()">OK</button>
+        </div>
     </div>
 </div>
 
@@ -155,26 +209,624 @@
         })
             .then(res => res.json())
             .then(data => {
-                setTimeout(() => {
-                    window.location.href = `/quiz/results/${matchId}`;
-                }, 2000);
+                if (data.status === 'completed') {
+                    // Both players finished - show results
+                    setTimeout(() => {
+                        window.location.href = `/quiz/results/${matchId}`;
+                    }, 2000);
+                } else if (data.status === 'waiting') {
+                    // Waiting for opponent
+                    showWaitingScreen();
+                    startPolling();
+                } else {
+                    // Fallback - redirect anyway
+                    setTimeout(() => {
+                        window.location.href = `/quiz/results/${matchId}`;
+                    }, 2000);
+                }
             })
             .catch(err => {
                 console.error('Error:', err);
-                alert('Error completing match');
+                showErrorModal('Match Error', 'Unable to complete match. Redirecting...');
+                setTimeout(() => {
+                    window.location.href = '/quiz';
+                }, 2000);
             });
     }
+    
+    // Show waiting screen
+    function showWaitingScreen() {
+        document.getElementById('match-complete').style.display = 'none';
+        document.getElementById('waiting-screen').style.display = 'block';
+        document.getElementById('your-score').textContent = score + '/10';
+    }
+    
+    // Poll server to check if opponent finished
+    let pollInterval;
+    function startPolling() {
+        console.log('[SYNC] Starting to poll for opponent completion');
+        pollInterval = setInterval(() => {
+            fetch(`/quiz/check_match_status/${matchId}`)
+                .then(res => res.json())
+                .then(data => {
+                    console.log('[SYNC] Poll result:', data.status);
+                    if (data.status === 'completed') {
+                        clearInterval(pollInterval);
+                        console.log('[SYNC] Opponent finished! Redirecting to results');
+                        window.location.href = `/quiz/results/${matchId}`;
+                    }
+                })
+                .catch(err => {
+                    console.error('[SYNC] Polling error:', err);
+                });
+        }, 2000); // Poll every 2 seconds
+    }
 
+    // Hide header and footer immediately (backup to CSS)
+    document.addEventListener('DOMContentLoaded', function() {
+        const header = document.querySelector('.header-section');
+        const footer = document.querySelector('.site-footer');
+        if (header) header.style.display = 'none';
+        if (footer) footer.style.display = 'none';
+        console.log('[QUIZ] Header and footer hidden');
+    });
+    
+    // Also hide immediately (don't wait for DOMContentLoaded)
+    const hideHeaderFooter = () => {
+        const header = document.querySelector('.header-section');
+        const footer = document.querySelector('.site-footer');
+        if (header) header.style.display = 'none';
+        if (footer) footer.style.display = 'none';
+    };
+    hideHeaderFooter();
+    
     // Start the quiz
     loadQuestion();
+    
+    // Try to enter fullscreen immediately
+    tryEnterFullscreen();
+    
+    // Also try on first user interaction (required by some browsers)
+    let fullscreenAttempted = false;
+    document.addEventListener('click', function attemptFullscreenOnClick() {
+        if (!fullscreenAttempted) {
+            fullscreenAttempted = true;
+            tryEnterFullscreen();
+            // Remove listener after first attempt
+            document.removeEventListener('click', attemptFullscreenOnClick);
+        }
+    }, { once: true });
+</script>
+
+<script>
+// ============================================
+// THEMED MODAL FUNCTIONS
+// ============================================
+
+function showThemedModal(options) {
+    const modal = document.getElementById('themedModal');
+    const content = document.getElementById('modalContent');
+    const icon = document.getElementById('modalIcon');
+    const title = document.getElementById('modalTitle');
+    const message = document.getElementById('modalMessage');
+    const buttons = document.getElementById('modalButtons');
+    
+    // Set content
+    icon.textContent = options.icon || 'ℹ️';
+    title.textContent = options.title || 'Notification';
+    message.textContent = options.message || '';
+    
+    // Set theme
+    content.className = 'themed-modal';
+    if (options.theme) {
+        content.classList.add(options.theme);
+    }
+    
+    // Set buttons
+    buttons.innerHTML = '';
+    if (options.buttons) {
+        options.buttons.forEach(btn => {
+            const button = document.createElement('button');
+            button.className = `modal-btn ${btn.type || 'primary'}`;
+            button.textContent = btn.text;
+            button.onclick = btn.action;
+            buttons.appendChild(button);
+        });
+    } else {
+        const okBtn = document.createElement('button');
+        okBtn.className = 'modal-btn primary';
+        okBtn.textContent = 'OK';
+        okBtn.onclick = closeThemedModal;
+        buttons.appendChild(okBtn);
+    }
+    
+    // Show modal
+    modal.style.display = 'flex';
+}
+
+function closeThemedModal() {
+    const modal = document.getElementById('themedModal');
+    modal.style.display = 'none';
+}
+
+function showErrorModal(title, message) {
+    showThemedModal({
+        icon: '⚠️',
+        title: title,
+        message: message,
+        theme: 'error',
+        buttons: [{
+            text: 'OK',
+            type: 'danger',
+            action: closeThemedModal
+        }]
+    });
+}
+
+// ============================================
+// QUIZ SESSION MANAGEMENT
+// ============================================
+
+let quizActive = true;
+
+// Prevent browser back/forward navigation (silently block)
+(function() {
+    window.history.pushState(null, null, window.location.href);
+    window.onpopstate = function(event) {
+        // Silently prevent back navigation without showing modal
+        window.history.pushState(null, null, window.location.href);
+        // Don't call attemptLeaveQuiz() - just block the navigation
+    };
+})();
+
+// Mark match as completed when user leaves
+function abandonMatch() {
+    // Use sendBeacon for reliable delivery even when page is closing
+    const data = JSON.stringify({ match_id: matchId });
+    const blob = new Blob([data], { type: 'application/json' });
+    navigator.sendBeacon(`/api/abandon_match/${matchId}`, blob);
+}
+
+// Prevent page unload/reload
+window.addEventListener('beforeunload', function(e) {
+    if (quizActive && currentQuestion < questionsData.length) {
+        // Mark match as completed/abandoned
+        abandonMatch();
+        
+        e.preventDefault();
+        e.returnValue = 'You will lose all your progress if you leave!';
+        return e.returnValue;
+    }
+});
+
+// Also handle page hide (mobile browsers)
+window.addEventListener('pagehide', function() {
+    if (quizActive && currentQuestion < questionsData.length) {
+        abandonMatch();
+    }
+});
+
+// Request fullscreen when quiz starts
+function enterFullscreen() {
+    console.log('[FULLSCREEN] enterFullscreen() called');
+    const elem = document.documentElement;
+    
+    if (elem.requestFullscreen) {
+        console.log('[FULLSCREEN] Using standard requestFullscreen');
+        elem.requestFullscreen().then(() => {
+            console.log('[FULLSCREEN] requestFullscreen promise resolved');
+        }).catch(err => {
+            console.error('[FULLSCREEN] requestFullscreen failed:', err.message);
+        });
+    } else if (elem.webkitRequestFullscreen) {
+        console.log('[FULLSCREEN] Using webkit requestFullscreen');
+        elem.webkitRequestFullscreen();
+    } else if (elem.msRequestFullscreen) {
+        console.log('[FULLSCREEN] Using ms requestFullscreen');
+        elem.msRequestFullscreen();
+    } else {
+        console.error('[FULLSCREEN] Fullscreen API not supported in this browser');
+    }
+}
+
+// Detect tab/window switch - ZERO TOLERANCE
+document.addEventListener('visibilitychange', function() {
+    if (document.hidden && quizActive && currentQuestion < questionsData.length) {
+        console.log('[VIOLATION] Tab switch detected - terminating quiz immediately');
+        
+        // Stop timer
+        if (timer) {
+            clearInterval(timer);
+        }
+        
+        // Mark quiz as inactive
+        quizActive = false;
+        
+        // Show termination message
+        showThemedModal({
+            icon: '🚫',
+            title: 'Quiz Terminated!',
+            message: 'Tab switching detected. Your quiz has been ended and results will be submitted.',
+            theme: 'error',
+            buttons: [{
+                text: 'View Results',
+                type: 'danger',
+                action: () => {
+                    closeThemedModal();
+                    forceCompleteMatch();
+                }
+            }]
+        });
+        
+        // Auto-redirect after 3 seconds
+        setTimeout(() => {
+            forceCompleteMatch();
+        }, 3000);
+    }
+});
+
+// Detect window blur (focus lost) - ZERO TOLERANCE
+window.addEventListener('blur', function() {
+    if (quizActive && currentQuestion < questionsData.length) {
+        console.log('[VIOLATION] Window focus lost - terminating quiz');
+        
+        // Stop timer
+        if (timer) {
+            clearInterval(timer);
+        }
+        
+        // Mark quiz as inactive
+        quizActive = false;
+        
+        // Show termination message
+        showThemedModal({
+            icon: '🚫',
+            title: 'Quiz Terminated!',
+            message: 'Window focus lost. Your quiz has been ended and results will be submitted.',
+            theme: 'error',
+            buttons: [{
+                text: 'View Results',
+                type: 'danger',
+                action: () => {
+                    closeThemedModal();
+                    forceCompleteMatch();
+                }
+            }]
+        });
+        
+        // Auto-redirect after 3 seconds
+        setTimeout(() => {
+            forceCompleteMatch();
+        }, 3000);
+    }
+});
+
+// Attempt to leave quiz
+function attemptLeaveQuiz() {
+    if (currentQuestion < questionsData.length) {
+        document.getElementById('leaveModal').style.display = 'flex';
+    } else {
+        // Quiz already complete, allow leaving
+        window.location.href = '/quiz';
+    }
+}
+
+// Resume quiz
+function resumeQuiz() {
+    document.getElementById('leaveModal').style.display = 'none';
+}
+
+// Confirm leave and forfeit
+function confirmLeave() {
+    quizActive = false;
+    document.getElementById('leaveModal').style.display = 'none';
+    
+    // Mark match as abandoned/completed
+    abandonMatch();
+    
+    // Also try to complete match properly
+    fetch(`/quiz/complete_match/${matchId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(() => {
+        window.location.href = '/quiz';
+    })
+    .catch(() => {
+        window.location.href = '/quiz';
+    });
+}
+
+// Force leave (after too many violations)
+function forceLeaveQuiz() {
+    quizActive = false;
+    fetch(`/quiz/complete_match/${matchId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(() => {
+        window.location.href = '/quiz';
+    })
+    .catch(() => {
+        window.location.href = '/quiz';
+    });
+}
+
+// Force complete match (for violations)
+function forceCompleteMatch() {
+    quizActive = false;
+    
+    // Complete the match with current score
+    fetch(`/quiz/complete_match/${matchId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(response => response.json())
+    .then(data => {
+        console.log('[VIOLATION] Match completed, redirecting to results');
+        // Redirect to results page
+        window.location.href = `/quiz/results/${matchId}`;
+    })
+    .catch(err => {
+        console.error('[VIOLATION] Error completing match:', err);
+        // Redirect anyway
+        window.location.href = `/quiz/results/${matchId}`;
+    });
+}
+
+
+
+// Prevent touchpad/trackpad swipe gestures
+let touchStartX = 0;
+let touchStartY = 0;
+
+document.addEventListener('touchstart', function(e) {
+    if (quizActive) {
+        touchStartX = e.changedTouches[0].screenX;
+        touchStartY = e.changedTouches[0].screenY;
+    }
+}, { passive: false });
+
+document.addEventListener('touchmove', function(e) {
+    if (quizActive) {
+        const touchEndX = e.changedTouches[0].screenX;
+        const touchEndY = e.changedTouches[0].screenY;
+        const deltaX = touchEndX - touchStartX;
+        const deltaY = touchEndY - touchStartY;
+        
+        // Prevent horizontal swipe (back/forward gesture)
+        if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 50) {
+            e.preventDefault();
+        }
+    }
+}, { passive: false });
+
+// Prevent mouse swipe gestures (touchpad)
+document.addEventListener('wheel', function(e) {
+    if (quizActive && e.deltaX !== 0) {
+        // Prevent horizontal scroll (swipe back/forward)
+        e.preventDefault();
+    }
+}, { passive: false });
+
+// Disable right-click during quiz
+document.addEventListener('contextmenu', function(e) {
+    if (quizActive) {
+        e.preventDefault();
+        return false;
+    }
+});
+
+// Disable shortcuts and prevent fullscreen exit
+document.addEventListener('keydown', function(e) {
+    if (quizActive) {
+        // ESC key - Prevent exiting fullscreen
+        if (e.keyCode === 27) {
+            e.preventDefault();
+            e.stopPropagation();
+            return false;
+        }
+        
+        // F11 - Toggle fullscreen (allow this)
+        if (e.keyCode === 122) {
+            // Let F11 work naturally
+            return true;
+        }
+        
+        // F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+U (block these)
+        if (e.keyCode === 123 || 
+            (e.ctrlKey && e.shiftKey && (e.keyCode === 73 || e.keyCode === 74)) ||
+            (e.ctrlKey && e.keyCode === 85)) {
+            e.preventDefault();
+            return false;
+        }
+    }
+});
+
+// Additional ESC key blocking on keyup
+document.addEventListener('keyup', function(e) {
+    if (quizActive && e.keyCode === 27) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        // Force back to fullscreen if ESC was pressed
+        if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+            console.log('[FULLSCREEN] ESC detected on keyup - forcing re-entry');
+            enterFullscreen();
+        }
+        return false;
+    }
+}, true); // Use capture phase
+
+// Block ESC at window level
+window.addEventListener('keydown', function(e) {
+    if (quizActive && e.keyCode === 27) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        return false;
+    }
+}, true);
+
+window.addEventListener('keyup', function(e) {
+    if (quizActive && e.keyCode === 27) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        // Immediately re-enter fullscreen
+        setTimeout(() => {
+            if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+                enterFullscreen();
+            }
+        }, 1);
+        return false;
+    }
+}, true);
+
+// Enter fullscreen when quiz starts - aggressive enforcement
+function tryEnterFullscreen(attempts = 0) {
+    console.log(`[FULLSCREEN] Attempt ${attempts + 1}/10`);
+    enterFullscreen();
+    
+    // Keep retrying until successful
+    setTimeout(() => {
+        const isFullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement);
+        console.log(`[FULLSCREEN] Check after attempt ${attempts + 1}: ${isFullscreen ? 'SUCCESS' : 'FAILED'}`);
+        
+        if (!isFullscreen) {
+            if (attempts < 10) {
+                // Retry up to 10 times
+                tryEnterFullscreen(attempts + 1);
+            } else {
+                console.error('[FULLSCREEN] All attempts failed. User may need to click or press F11.');
+                // Show a visual prompt
+                showFullscreenPrompt();
+            }
+        } else {
+            console.log('[FULLSCREEN] Successfully entered fullscreen mode!');
+        }
+    }, 300);
+}
+
+// Show visual prompt if fullscreen fails
+function showFullscreenPrompt() {
+    const prompt = document.createElement('div');
+    prompt.id = 'fullscreen-prompt';
+    prompt.innerHTML = `
+        <div style="position: fixed; top: 0; left: 0; right: 0; background: #ff6b6b; color: white; padding: 15px; text-align: center; z-index: 99999; font-size: 16px; font-weight: bold; box-shadow: 0 2px 10px rgba(0,0,0,0.3);">
+            ⚠️ Please press F11 or click here to enter fullscreen mode
+            <button onclick="enterFullscreen(); this.parentElement.remove();" style="margin-left: 15px; padding: 8px 20px; background: white; color: #ff6b6b; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">
+                Enter Fullscreen
+            </button>
+        </div>
+    `;
+    document.body.appendChild(prompt);
+}
+
+// Also try fullscreen on page load
+window.addEventListener('load', function() {
+    setTimeout(() => {
+        tryEnterFullscreen();
+    }, 500);
+});
+
+// Monitor fullscreen changes - force re-entry immediately
+document.addEventListener('fullscreenchange', function() {
+    if (!document.fullscreenElement && quizActive && currentQuestion < questionsData.length) {
+        console.log('[FULLSCREEN] User exited fullscreen - forcing re-entry');
+        // User exited fullscreen - force back IMMEDIATELY (no delay)
+        enterFullscreen();
+        
+        // Don't pause timer - keep quiz running
+        // This makes it harder for users to cheat by exiting fullscreen
+    }
+});
+
+// Additional monitoring with setInterval for extra security
+setInterval(function() {
+    if (quizActive && currentQuestion < questionsData.length) {
+        const isFullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement);
+        if (!isFullscreen) {
+            console.log('[FULLSCREEN] Detected exit via interval check - forcing re-entry');
+            enterFullscreen();
+        }
+    }
+}, 100); // Check every 100ms
+
+// Also monitor webkit fullscreen changes
+document.addEventListener('webkitfullscreenchange', function() {
+    if (!document.webkitFullscreenElement && quizActive && currentQuestion < questionsData.length) {
+        // Force back to fullscreen immediately
+        enterFullscreen();
+    }
+});
+
+// Exit fullscreen when quiz completes
+function exitFullscreen() {
+    if (document.exitFullscreen) {
+        document.exitFullscreen();
+    } else if (document.webkitExitFullscreen) {
+        document.webkitExitFullscreen();
+    } else if (document.msExitFullscreen) {
+        document.msExitFullscreen();
+    }
+}
+
+// Update completeMatch to exit fullscreen
+const originalCompleteMatch = completeMatch;
+completeMatch = function() {
+    quizActive = false;
+    exitFullscreen();
+    originalCompleteMatch();
+};
 </script>
 
 <style>
+    /* Fullscreen mode styles */
     .quiz-match-container {
         max-width: 900px;
         margin: 20px auto;
         padding: 20px;
     }
+    
+    /* When in fullscreen, make container fill the screen */
+    :fullscreen,
+    :-webkit-full-screen,
+    :-moz-full-screen,
+    :-ms-fullscreen {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    
+    :fullscreen .quiz-match-container,
+    :-webkit-full-screen .quiz-match-container,
+    :-moz-full-screen .quiz-match-container,
+    :-ms-fullscreen .quiz-match-container {
+        max-width: 100%;
+        width: 100%;
+        height: 100vh;
+        margin: 0;
+        padding: 20px;
+        overflow-y: auto;
+    }
+    
+    /* Hide scrollbars in fullscreen for cleaner look */
+    :fullscreen::-webkit-scrollbar,
+    :-webkit-full-screen::-webkit-scrollbar {
+        width: 8px;
+    }
+    
+    :fullscreen::-webkit-scrollbar-track,
+    :-webkit-full-screen::-webkit-scrollbar-track {
+        background: rgba(255, 255, 255, 0.1);
+    }
+    
+    :fullscreen::-webkit-scrollbar-thumb,
+    :-webkit-full-screen::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.3);
+        border-radius: 4px;
+    }
+    
+
 
     .match-header {
         display: flex;
@@ -298,7 +950,351 @@
         }
     }
 
+    /* Waiting Screen Styles */
+    .waiting-screen {
+        text-align: center;
+        background: white;
+        padding: 60px 40px;
+        border-radius: 20px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    }
+
+    .waiting-container {
+        max-width: 500px;
+        margin: 0 auto;
+    }
+
+    .waiting-icon {
+        font-size: 80px;
+        animation: pulse 2s ease-in-out infinite;
+        margin-bottom: 20px;
+    }
+
+    @keyframes pulse {
+        0%, 100% { transform: scale(1); opacity: 1; }
+        50% { transform: scale(1.1); opacity: 0.8; }
+    }
+
+    .waiting-screen h2 {
+        color: #6200ff;
+        font-size: 32px;
+        margin: 0 0 15px 0;
+    }
+
+    .waiting-message {
+        font-size: 18px;
+        color: #666;
+        margin: 0 0 30px 0;
+    }
+
+    .loading-dots {
+        display: flex;
+        justify-content: center;
+        gap: 10px;
+        margin: 30px 0;
+    }
+
+    .loading-dots span {
+        width: 12px;
+        height: 12px;
+        background: #6200ff;
+        border-radius: 50%;
+        animation: bounce 1.4s ease-in-out infinite;
+    }
+
+    .loading-dots span:nth-child(1) {
+        animation-delay: 0s;
+    }
+
+    .loading-dots span:nth-child(2) {
+        animation-delay: 0.2s;
+    }
+
+    .loading-dots span:nth-child(3) {
+        animation-delay: 0.4s;
+    }
+
+    @keyframes bounce {
+        0%, 80%, 100% { transform: translateY(0); }
+        40% { transform: translateY(-20px); }
+    }
+
+    .waiting-info {
+        font-size: 14px;
+        color: #999;
+        margin: 20px 0;
+    }
+
+    .waiting-stats {
+        margin-top: 30px;
+        padding: 20px;
+        background: #f8f8ff;
+        border-radius: 15px;
+    }
+
+    .stat-item {
+        text-align: center;
+    }
+
+    .stat-label {
+        font-size: 14px;
+        color: #666;
+        margin-bottom: 8px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+
+    .stat-value {
+        font-size: 36px;
+        font-weight: 800;
+        background: linear-gradient(135deg, #6200ff, #8f3dff);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+
+    /* Back Button */
+    .back-btn {
+        background: #f0f0f0;
+        border: 2px solid #e0e0e0;
+        padding: 10px 20px;
+        border-radius: 10px;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        color: #666;
+    }
+
+    .back-btn:hover {
+        background: #e0e0e0;
+        border-color: #d0d0d0;
+        color: #333;
+    }
+
+    /* Modal Styles */
+    .modal-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.8);
+        backdrop-filter: blur(10px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 99999;
+        animation: fadeIn 0.3s ease;
+    }
+
+    @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+    }
+
+    .modal-card {
+        background: white;
+        border-radius: 25px;
+        padding: 40px 35px;
+        max-width: 500px;
+        width: 90%;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        text-align: center;
+        animation: slideUp 0.3s ease;
+    }
+
+    @keyframes slideUp {
+        from {
+            transform: translateY(50px);
+            opacity: 0;
+        }
+        to {
+            transform: translateY(0);
+            opacity: 1;
+        }
+    }
+
+    .modal-icon {
+        font-size: 72px;
+        margin-bottom: 20px;
+        animation: bounce 0.6s ease;
+    }
+
+    @keyframes bounce {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-10px); }
+    }
+
+    .modal-title {
+        font-size: 28px;
+        color: #333;
+        margin: 0 0 15px 0;
+        font-weight: 700;
+    }
+
+    .modal-message {
+        font-size: 16px;
+        color: #666;
+        margin: 0 0 30px 0;
+        line-height: 1.6;
+    }
+
+    .modal-actions {
+        display: flex;
+        gap: 12px;
+        justify-content: center;
+        flex-wrap: wrap;
+    }
+
+    .modal-btn {
+        padding: 14px 32px;
+        border-radius: 30px;
+        font-size: 16px;
+        font-weight: 600;
+        border: none;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        min-width: 140px;
+    }
+
+    .modal-btn-primary {
+        background: linear-gradient(135deg, #6200ff, #8f3dff);
+        color: white;
+        box-shadow: 0 4px 15px rgba(98, 0, 255, 0.3);
+    }
+
+    .modal-btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(98, 0, 255, 0.4);
+    }
+
+    .modal-btn-danger {
+        background: linear-gradient(135deg, #dc3545, #c82333);
+        color: white;
+        box-shadow: 0 4px 15px rgba(220, 53, 69, 0.3);
+    }
+
+    .modal-btn-danger:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(220, 53, 69, 0.4);
+    }
+
+    /* Themed Modal Styles */
+    .themed-modal {
+        background: white;
+        border-radius: 25px;
+        padding: 40px 35px;
+        max-width: 450px;
+        width: 90%;
+        text-align: center;
+        position: relative;
+        animation: modalSlideIn 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+        box-shadow: 0 25px 60px rgba(0, 0, 0, 0.3);
+    }
+
+    @keyframes modalSlideIn {
+        0% {
+            transform: scale(0.3) translateY(-50px);
+            opacity: 0;
+        }
+        100% {
+            transform: scale(1) translateY(0);
+            opacity: 1;
+        }
+    }
+
+    .themed-modal .modal-icon {
+        font-size: 80px;
+        margin-bottom: 20px;
+        animation: modalIconBounce 0.6s ease;
+    }
+
+    @keyframes modalIconBounce {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.2); }
+    }
+
+    .themed-modal .modal-title {
+        font-size: 28px;
+        font-weight: 700;
+        color: #333;
+        margin: 0 0 15px 0;
+    }
+
+    .themed-modal .modal-message {
+        font-size: 18px;
+        color: #666;
+        line-height: 1.5;
+        margin: 0 0 30px 0;
+    }
+
+    .modal-buttons {
+        display: flex;
+        gap: 15px;
+        justify-content: center;
+    }
+
+    .modal-btn.primary {
+        background: linear-gradient(135deg, #6200ff, #8f3dff);
+        color: white;
+        box-shadow: 0 8px 25px rgba(98, 0, 255, 0.3);
+    }
+
+    .modal-btn.primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 12px 35px rgba(98, 0, 255, 0.4);
+    }
+
+    .modal-btn.danger {
+        background: linear-gradient(135deg, #dc3545, #c82333);
+        color: white;
+        box-shadow: 0 8px 25px rgba(220, 53, 69, 0.3);
+    }
+
+    .modal-btn.danger:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 12px 35px rgba(220, 53, 69, 0.4);
+    }
+
+    .themed-modal.error {
+        background: linear-gradient(135deg, #f8d7da, #f5c6cb);
+    }
+
+    .themed-modal.error .modal-title {
+        color: #721c24;
+    }
+
+    .themed-modal.error .modal-message {
+        color: #721c24;
+    }
+
     @media screen and (max-width: 768px) {
+        .themed-modal {
+            padding: 30px 25px;
+            width: 95%;
+        }
+        
+        .themed-modal .modal-icon {
+            font-size: 60px;
+        }
+        
+        .themed-modal .modal-title {
+            font-size: 24px;
+        }
+        
+        .themed-modal .modal-message {
+            font-size: 16px;
+        }
+        
+        .modal-buttons {
+            flex-direction: column;
+        }
+        
+        .modal-btn {
+            width: 100%;
+        }
+        
         .quiz-match-container {
             padding: 10px;
         }
@@ -306,6 +1302,13 @@
         .match-header {
             font-size: 14px;
             padding: 15px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .back-btn {
+            font-size: 14px;
+            padding: 8px 16px;
         }
 
         .timer {
@@ -328,6 +1331,31 @@
         .option-letter {
             width: 35px;
             height: 35px;
+        }
+
+        .modal-card {
+            padding: 30px 25px;
+            width: 85%;
+        }
+
+        .modal-icon {
+            font-size: 56px;
+        }
+
+        .modal-title {
+            font-size: 24px;
+        }
+
+        .modal-message {
+            font-size: 15px;
+        }
+
+        .modal-actions {
+            flex-direction: column;
+        }
+
+        .modal-btn {
+            width: 100%;
         }
     }
 </style>

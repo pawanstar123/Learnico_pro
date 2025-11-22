@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Online Players</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        .test-section {
+            background: #f5f5f5;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 10px;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        .result {
+            background: white;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+        }
+        .success { color: green; }
+        .error { color: red; }
+        pre {
+            background: #333;
+            color: #0f0;
+            padding: 10px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧪 Online Players Feature Test</h1>
+    
+    <div class="test-section">
+        <h2>Test 1: Check if logged in</h2>
+        <button onclick="testLogin()">Test Login Status</button>
+        <div id="login-result" class="result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>Test 2: Call API</h2>
+        <select id="difficulty">
+            <option value="easy">Easy</option>
+            <option value="medium" selected>Medium</option>
+            <option value="hard">Hard</option>
+        </select>
+        <button onclick="testAPI()">Test API Call</button>
+        <div id="api-result" class="result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>Test 3: Check Debug Endpoint</h2>
+        <button onclick="testDebug()">Check Who's Online</button>
+        <div id="debug-result" class="result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>Test 4: Auto-Refresh Test</h2>
+        <button onclick="startAutoRefresh()">Start Auto-Refresh (5s)</button>
+        <button onclick="stopAutoRefresh()">Stop</button>
+        <div id="refresh-result" class="result"></div>
+    </div>
+
+    <script>
+        let refreshInterval = null;
+        
+        function testLogin() {
+            const result = document.getElementById('login-result');
+            result.innerHTML = '<p>Checking login status...</p>';
+            
+            fetch('/api/online_players?difficulty=medium')
+                .then(res => {
+                    if (res.status === 401) {
+                        result.innerHTML = '<p class="error">❌ NOT LOGGED IN</p><p>Please login first!</p>';
+                    } else if (res.status === 200) {
+                        result.innerHTML = '<p class="success">✅ LOGGED IN</p>';
+                        return res.json();
+                    } else {
+                        result.innerHTML = '<p class="error">❌ Unexpected status: ' + res.status + '</p>';
+                    }
+                })
+                .then(data => {
+                    if (data) {
+                        result.innerHTML += '<pre>' + JSON.stringify(data, null, 2) + '</pre>';
+                    }
+                })
+                .catch(err => {
+                    result.innerHTML = '<p class="error">❌ Error: ' + err + '</p>';
+                });
+        }
+        
+        function testAPI() {
+            const difficulty = document.getElementById('difficulty').value;
+            const result = document.getElementById('api-result');
+            result.innerHTML = '<p>Calling API with difficulty: ' + difficulty + '</p>';
+            
+            fetch('/api/online_players?difficulty=' + difficulty)
+                .then(res => {
+                    result.innerHTML += '<p>Status: ' + res.status + '</p>';
+                    return res.json();
+                })
+                .then(data => {
+                    result.innerHTML += '<p class="success">✅ API Response:</p>';
+                    result.innerHTML += '<pre>' + JSON.stringify(data, null, 2) + '</pre>';
+                    
+                    if (data.count > 0) {
+                        result.innerHTML += '<p class="success">Found ' + data.count + ' players online!</p>';
+                    } else {
+                        result.innerHTML += '<p>No players online at this difficulty.</p>';
+                    }
+                })
+                .catch(err => {
+                    result.innerHTML += '<p class="error">❌ Error: ' + err + '</p>';
+                });
+        }
+        
+        function testDebug() {
+            const result = document.getElementById('debug-result');
+            result.innerHTML = '<p>Checking debug endpoint...</p>';
+            
+            fetch('/debug/online')
+                .then(res => res.json())
+                .then(data => {
+                    result.innerHTML = '<p class="success">✅ Debug Response:</p>';
+                    result.innerHTML += '<pre>' + JSON.stringify(data, null, 2) + '</pre>';
+                    result.innerHTML += '<p>Total online: ' + data.total_online + '</p>';
+                })
+                .catch(err => {
+                    result.innerHTML = '<p class="error">❌ Error: ' + err + '</p>';
+                });
+        }
+        
+        function startAutoRefresh() {
+            const result = document.getElementById('refresh-result');
+            result.innerHTML = '<p class="success">✅ Auto-refresh started (every 5 seconds)</p>';
+            
+            if (refreshInterval) {
+                clearInterval(refreshInterval);
+            }
+            
+            let count = 0;
+            refreshInterval = setInterval(() => {
+                count++;
+                const difficulty = document.getElementById('difficulty').value;
+                
+                fetch('/api/online_players?difficulty=' + difficulty)
+                    .then(res => res.json())
+                    .then(data => {
+                        result.innerHTML = '<p class="success">✅ Refresh #' + count + ' at ' + new Date().toLocaleTimeString() + '</p>';
+                        result.innerHTML += '<p>Players online: ' + data.count + '</p>';
+                        if (data.players && data.players.length > 0) {
+                            result.innerHTML += '<p>Players:</p><ul>';
+                            data.players.forEach(p => {
+                                result.innerHTML += '<li>' + p.name + ' (ELO: ' + p.elo_rating + ')</li>';
+                            });
+                            result.innerHTML += '</ul>';
+                        }
+                    })
+                    .catch(err => {
+                        result.innerHTML += '<p class="error">Error: ' + err + '</p>';
+                    });
+            }, 5000);
+        }
+        
+        function stopAutoRefresh() {
+            if (refreshInterval) {
+                clearInterval(refreshInterval);
+                refreshInterval = null;
+                document.getElementById('refresh-result').innerHTML = '<p>Auto-refresh stopped</p>';
+            }
+        }
+        
+        // Auto-test on load
+        window.addEventListener('load', () => {
+            console.log('Test page loaded');
+            testLogin();
+        });
+    </script>
+</body>
+</html>

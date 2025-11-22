@@ -1,14 +1,8 @@
 {% extends 'app.html' %}
+{% block title %}Profile - Learnico{% endblock %}
 {% block content %}
 
-<div class="header-section">
-</div>
-
 <div class="auth-card profile-wrap">
-    <h2 style="text-align: center; color: #6200ff; margin-bottom: 8px; font-size: 24px;">Profile</h2>
-    <p style="text-align: center; color: #666; margin-bottom: 20px; font-size: 14px;">View and update your player
-        details</p>
-
     {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}
     {% for category, message in messages %}
@@ -20,7 +14,12 @@
     {% if user %}
     <!-- Hero banner with rank and XP -->
     <div class="profile-hero">
-        <div class="cover"></div>
+        <div class="cover">
+            <div class="profile-header-text">
+                <h2 class="profile-title">Profile</h2>
+                <p class="profile-subtitle">View and update your player details</p>
+            </div>
+        </div>
         <div class="hero-content">
             {% set elo = user[4] if user[4] else 1000 %}
             {% if elo >= 1500 %}
@@ -68,9 +67,11 @@
 
         <!-- Right: Details + Forms -->
         <div class="profile-right">
-            <div class="pill-row">
-                <span class="pill">Player ID: <strong id="playerIdText">{{ user[0] }}</strong></span>
-                <button class="pill-btn" type="button" onclick="copyPlayerId()">Copy</button>
+            <div class="detail-box" style="margin-top: 0;">
+                <div class="detail">
+                    <div class="label">Player ID</div>
+                    <div class="value">{{ user[0] }}</div>
+                </div>
             </div>
 
             <div class="detail-box">
@@ -82,7 +83,7 @@
 
             <form action="/profile" method="POST" class="profile-form">
                 <div class="input-box">
-                    <i class="icon-left">👤</i>
+                    <i class="icon-left">😊</i>
                     <input type="text" name="name" value="{{ user[1] }}" placeholder="Display name" required>
                 </div>
                 <button class="auth-btn" type="submit">Save Changes</button>
@@ -120,20 +121,6 @@
 </div>
 
 <script>
-    function copyPlayerId() {
-        const idText = document.getElementById('playerIdText').textContent;
-        if (navigator.clipboard && window.isSecureContext) {
-            navigator.clipboard.writeText(idText);
-        } else {
-            const ta = document.createElement('textarea');
-            ta.value = idText;
-            document.body.appendChild(ta);
-            ta.select();
-            document.execCommand('copy');
-            document.body.removeChild(ta);
-        }
-    }
-
     // Set XP progress bar width
     document.addEventListener('DOMContentLoaded', function () {
         const xpBar = document.querySelector('.xp-progress');
@@ -156,6 +143,90 @@
     .rank-bronze {
         background: linear-gradient(135deg, #c48f5a, #9b6a38) !important;
     }
+
+    /* Profile header text in purple box */
+    .profile-header-text {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
+        padding: 20px;
+    }
+
+    .profile-title {
+        color: white;
+        font-size: 32px;
+        font-weight: 700;
+        margin: 0;
+        text-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    }
+
+    .profile-subtitle {
+        color: rgba(255, 255, 255, 0.9);
+        font-size: 16px;
+        margin: 8px 0 0 0;
+        text-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+    }
+
+    @media screen and (max-width: 768px) {
+        .profile-title {
+            font-size: 28px;
+        }
+
+        .profile-subtitle {
+            font-size: 14px;
+        }
+    }
+
+    @media screen and (max-width: 480px) {
+        .profile-title {
+            font-size: 24px;
+        }
+
+        .profile-subtitle {
+            font-size: 13px;
+        }
+
+        .profile-header-text {
+            padding: 15px;
+        }
+    }
 </style>
+
+<script>
+// Comprehensive back button and swipe prevention
+(function() {
+    // Replace current history entry
+    if (window.history && window.history.replaceState) {
+        window.history.replaceState(null, null, window.location.href);
+    }
+    
+    // Prevent back navigation
+    window.addEventListener('popstate', function(event) {
+        window.history.pushState(null, null, window.location.href);
+    });
+    
+    // Push initial state
+    window.history.pushState(null, null, window.location.href);
+})();
+
+// Prevent page from being cached
+window.addEventListener('pageshow', function(event) {
+    if (event.persisted) {
+        window.location.reload();
+    }
+});
+
+// Prevent swipe gestures from navigating back
+window.addEventListener('load', function() {
+    window.history.pushState(null, null, window.location.href);
+});
+
+// Additional protection against back navigation
+window.onbeforeunload = function() {
+    window.history.pushState(null, null, window.location.href);
+};
+</script>
 
 {% endblock %}

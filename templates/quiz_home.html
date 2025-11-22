@@ -1,20 +1,10 @@
 {% extends 'app.html' %}
+{% block title %}Quiz - Learnico{% endblock %}
 {% block content %}
-
-<div class="header-section">
-    <div class="dashboard-navbar">
-        <div class="nav-brand">🎮 Quiz Arena</div>
-        <div class="nav-links">
-            <a href="/Dashboard" class="nav-link">Dashboard</a>
-            <a href="/leaderboard" class="nav-link">Leaderboard</a>
-            <a href="/profile" class="nav-link profile-icon">👤</a>
-        </div>
-    </div>
-</div>
 
 <div class="container" style="margin-top: 20px;">
     <div class="quiz-hero">
-        <h1>🎯 Quiz Battle Arena</h1>
+        <h1>🎯 Learnico Battle Arena</h1>
         <p>Challenge players and climb the leaderboard!</p>
     </div>
 
@@ -52,30 +42,43 @@
     <div class="difficulty-selection" id="difficulty-selection">
         <h3>📚 Select Your Level</h3>
         <p style="text-align: center; color: #666; margin-bottom: 25px;">
-            Choose difficulty based on your standard
+            Choose difficulty based on your class
         </p>
         
         <div class="difficulty-cards">
             <div class="difficulty-card" onclick="selectDifficulty('easy')">
                 <div class="difficulty-icon">✏️</div>
                 <h4>Easy</h4>
-                <p>Below 6th Standard</p>
+                <p>Below 6th Class</p>
                 <div class="difficulty-badge easy">Beginner Level</div>
             </div>
             
             <div class="difficulty-card" onclick="selectDifficulty('medium')">
                 <div class="difficulty-icon">📖</div>
                 <h4>Medium</h4>
-                <p>6th to 8th Standard</p>
+                <p>6th to 8th Class</p>
                 <div class="difficulty-badge medium">Intermediate Level</div>
             </div>
             
             <div class="difficulty-card" onclick="selectDifficulty('hard')">
                 <div class="difficulty-icon">🎓</div>
                 <h4>Hard</h4>
-                <p>9th to 12th Standard</p>
+                <p>9th to 12th Class</p>
                 <div class="difficulty-badge hard">Advanced Level</div>
             </div>
+        </div>
+    </div>
+
+    <!-- Online Players Section -->
+    <div class="online-players-section" style="display:none;" id="online-players-section">
+        <h3 style="text-align: center; color: #6200ff; margin-bottom: 15px;">
+            🟢 Players Online at This Level
+        </h3>
+        <p style="text-align: center; color: #666; margin-bottom: 20px; font-size: 14px;">
+            <span id="online-count">0</span> players looking for matches
+        </p>
+        <div id="online-players-list" class="online-players-grid">
+            <p class="loading-text">Searching for online players...</p>
         </div>
     </div>
 
@@ -94,37 +97,144 @@
     </div>
 </div>
 
+<!-- Themed Modal System -->
+<div class="modal-overlay" id="themedModal" style="display: none;">
+    <div class="themed-modal" id="modalContent">
+        <div class="modal-icon" id="modalIcon">ℹ️</div>
+        <h3 class="modal-title" id="modalTitle">Notification</h3>
+        <p class="modal-message" id="modalMessage">Message content</p>
+        <div class="modal-buttons" id="modalButtons">
+            <button class="modal-btn primary" onclick="closeThemedModal()">OK</button>
+        </div>
+    </div>
+</div>
+
+<!-- Confirmation Modal -->
+<div id="confirmModal" class="modal-overlay" style="display:none;">
+    <div class="modal-card">
+        <div class="modal-icon">✅</div>
+        <h2 class="modal-title">Level Selected!</h2>
+        <p class="modal-message" id="modalMessage"></p>
+        <div class="modal-actions">
+            <button class="modal-btn modal-btn-primary" onclick="closeModal()">Continue</button>
+            <button class="modal-btn modal-btn-secondary" onclick="cancelSelection()">Change Level</button>
+        </div>
+    </div>
+</div>
+
+<!-- Start Quiz Modal -->
+<div id="startModal" class="modal-overlay" style="display:none;">
+    <div class="modal-card">
+        <div class="modal-icon">🎮</div>
+        <h2 class="modal-title">Start Quiz Match?</h2>
+        <p class="modal-message">Are you ready to challenge an opponent?</p>
+        <div class="modal-actions">
+            <button class="modal-btn modal-btn-primary" onclick="confirmStart()">Start Match</button>
+            <button class="modal-btn modal-btn-secondary" onclick="closeStartModal()">Cancel</button>
+        </div>
+    </div>
+</div>
+
 <script>
 let selectedDifficulty = null;
+
+let onlinePlayersInterval = null;
 
 function selectDifficulty(level) {
     selectedDifficulty = level;
     document.getElementById('difficulty-selection').style.display = 'none';
+    document.getElementById('online-players-section').style.display = 'block';
     document.getElementById('quiz-actions').style.display = 'flex';
     
-    // Show confirmation
+    // Show confirmation modal
     const levelNames = {
-        'easy': 'Easy (Below 6th Standard)',
-        'medium': 'Medium (6th-8th Standard)',
-        'hard': 'Hard (9th-12th Standard)'
+        'easy': 'Easy (Below 6th Class)',
+        'medium': 'Medium (6th-8th Class)',
+        'hard': 'Hard (9th-12th Class)'
     };
     
-    alert('✅ Level selected: ' + levelNames[level] + '\n\nClick "Find Match" to start!');
+    document.getElementById('modalMessage').textContent = 
+        'You selected: ' + levelNames[level] + '. Click "Find Match" to start!';
+    document.getElementById('confirmModal').style.display = 'flex';
+    
+    // Start loading online players
+    loadOnlinePlayers();
+    
+    // Refresh online players every 5 seconds
+    if (onlinePlayersInterval) {
+        clearInterval(onlinePlayersInterval);
+    }
+    onlinePlayersInterval = setInterval(loadOnlinePlayers, 5000);
 }
 
-function changeDifficulty() {
+function closeModal() {
+    document.getElementById('confirmModal').style.display = 'none';
+}
+
+function cancelSelection() {
+    document.getElementById('confirmModal').style.display = 'none';
     selectedDifficulty = null;
     document.getElementById('difficulty-selection').style.display = 'block';
     document.getElementById('quiz-actions').style.display = 'none';
 }
 
+function closeStartModal() {
+    document.getElementById('startModal').style.display = 'none';
+}
+
+function changeDifficulty() {
+    selectedDifficulty = null;
+    document.getElementById('difficulty-selection').style.display = 'block';
+    document.getElementById('online-players-section').style.display = 'none';
+    document.getElementById('quiz-actions').style.display = 'none';
+    
+    // Stop refreshing online players
+    if (onlinePlayersInterval) {
+        clearInterval(onlinePlayersInterval);
+        onlinePlayersInterval = null;
+    }
+}
+
 function findMatch() {
     if (!selectedDifficulty) {
-        alert('Please select a difficulty level first!');
+        showErrorModal('Please select a difficulty level first!');
         return;
     }
     
-    document.getElementById('matchmaking-status').style.display = 'block';
+    // Show start confirmation modal
+    document.getElementById('startModal').style.display = 'flex';
+}
+
+function confirmStart() {
+    document.getElementById('startModal').style.display = 'none';
+    
+    // Show enhanced matchmaking status
+    const statusDiv = document.getElementById('matchmaking-status');
+    statusDiv.style.display = 'block';
+    statusDiv.innerHTML = `
+        <div class="loading-spinner">🔄</div>
+        <p class="status-text">Finding the perfect opponent...</p>
+        <div class="status-details">
+            <div class="status-step active">🔍 Searching players</div>
+            <div class="status-step">⚖️ Matching skill levels</div>
+            <div class="status-step">🎮 Creating match</div>
+        </div>
+    `;
+    
+    // Simulate search steps
+    setTimeout(() => {
+        const steps = document.querySelectorAll('.status-step');
+        if (steps[1]) steps[1].classList.add('active');
+        const statusText = document.querySelector('.status-text');
+        if (statusText) statusText.textContent = 'Analyzing skill levels...';
+    }, 800);
+    
+    setTimeout(() => {
+        const steps = document.querySelectorAll('.status-step');
+        if (steps[2]) steps[2].classList.add('active');
+        const statusText = document.querySelector('.status-text');
+        if (statusText) statusText.textContent = 'Preparing your match...';
+    }, 1600);
     
     fetch('/quiz/matchmaking', {
         method: 'POST',
@@ -136,17 +246,484 @@ function findMatch() {
     .then(res => res.json())
     .then(data => {
         if (data.error) {
-            alert('Error: ' + data.error);
+            showErrorModal('Error: ' + data.error);
             document.getElementById('matchmaking-status').style.display = 'none';
         } else {
-            window.location.href = '/quiz/match/' + data.match_id;
+            // Show opponent found message
+            statusDiv.innerHTML = `
+                <div class="opponent-found">
+                    <div class="success-icon">✅</div>
+                    <h3>Opponent Found!</h3>
+                    <div class="opponent-info">
+                        <div class="opponent-name">🎮 ${data.opponent_name}</div>
+                        <div class="opponent-stats">
+                            <span class="stat">⭐ ${data.opponent_elo} ELO</span>
+                            <span class="stat">🏆 ${data.opponent_win_rate}% Win Rate</span>
+                            <span class="stat">🎯 ${data.opponent_matches} Matches</span>
+                        </div>
+                        <div class="elo-diff ${data.elo_difference <= 100 ? 'close-match' : 'skill-gap'}">
+                            ${data.elo_difference <= 50 ? '🔥 Perfect Match!' : 
+                              data.elo_difference <= 100 ? '⚡ Close Match!' : 
+                              '🎯 Skill Challenge!'}
+                        </div>
+                    </div>
+                    <p class="starting-text">Starting match in 3 seconds...</p>
+                </div>
+            `;
+            
+            // Redirect after showing opponent info
+            setTimeout(() => {
+                window.location.href = '/quiz/match/' + data.match_id;
+            }, 3000);
         }
     })
     .catch(err => {
-        alert('Error finding match: ' + err);
+        showErrorModal('Error finding match: ' + err);
         document.getElementById('matchmaking-status').style.display = 'none';
     });
 }
+
+// Check if user has been challenged (has a pending match)
+let challengeModalShown = false;
+
+function checkForPendingMatch() {
+    // Don't check if modal is already shown
+    if (challengeModalShown) {
+        return;
+    }
+    
+    console.log('[CHECK] Checking for pending matches...');
+    
+    fetch('/api/check_pending_match')
+        .then(res => res.json())
+        .then(data => {
+            console.log('[CHECK] Pending match response:', data);
+            
+            if (data.has_match && !challengeModalShown) {
+                // User has been challenged! Show modal
+                console.log('[CHECK] MATCH FOUND! Showing challenge modal');
+                
+                // Set flag to prevent multiple modals
+                challengeModalShown = true;
+                
+                // Stop the interval
+                if (onlinePlayersInterval) {
+                    clearInterval(onlinePlayersInterval);
+                }
+                
+                showChallengeModal(data.opponent_name, () => {
+                    window.location.href = '/quiz/match/' + data.match_id;
+                });
+            } else {
+                console.log('[CHECK] No pending match found');
+            }
+        })
+        .catch(err => {
+            console.error('[CHECK] Error checking pending match:', err);
+        });
+}
+
+// Load online players at selected difficulty
+function loadOnlinePlayers() {
+    if (!selectedDifficulty) {
+        console.log('No difficulty selected yet');
+        return;
+    }
+    
+    console.log('Loading online players for difficulty:', selectedDifficulty);
+    
+    // Also check for pending matches
+    checkForPendingMatch();
+    
+    fetch('/api/online_players?difficulty=' + selectedDifficulty)
+        .then(res => {
+            console.log('API response status:', res.status);
+            return res.json();
+        })
+        .then(data => {
+            console.log('Online players data:', data);
+            
+            const container = document.getElementById('online-players-list');
+            const countSpan = document.getElementById('online-count');
+            
+            if (!container) {
+                console.error('Container not found!');
+                return;
+            }
+            
+            countSpan.textContent = data.count || 0;
+            container.innerHTML = '';
+            
+            if (!data.players || data.players.length === 0) {
+                console.log('No players online');
+                container.innerHTML = `
+                    <div class="no-players-online">
+                        <div class="no-players-icon">😴</div>
+                        <p>No players online at this level right now</p>
+                        <p class="hint">Click "Find Match" to play against any available opponent!</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            console.log('Displaying', data.players.length, 'players');
+            
+            data.players.forEach(player => {
+                const playerDiv = document.createElement('div');
+                playerDiv.className = 'online-player-card';
+                
+                const qualityClass = player.match_quality === 'perfect' ? 'perfect-match' : 
+                                    player.match_quality === 'close' ? 'close-match' : 'skill-challenge';
+                const qualityIcon = player.match_quality === 'perfect' ? '🔥' : 
+                                   player.match_quality === 'close' ? '⚡' : '🎯';
+                const qualityText = player.match_quality === 'perfect' ? 'Perfect Match' : 
+                                   player.match_quality === 'close' ? 'Close Match' : 'Challenge';
+                
+                playerDiv.innerHTML = `
+                    <div class="online-player-header">
+                        <div class="online-indicator">🟢</div>
+                        <div class="player-info">
+                            <div class="player-name">🎮 ${player.name}</div>
+                            <div class="player-status">Looking for match...</div>
+                        </div>
+                    </div>
+                    <div class="player-stats-compact">
+                        <div class="stat-compact">
+                            <span class="stat-label">ELO</span>
+                            <span class="stat-value">${player.elo_rating}</span>
+                        </div>
+                        <div class="stat-compact">
+                            <span class="stat-label">Matches</span>
+                            <span class="stat-value">${player.matches_played}</span>
+                        </div>
+                        <div class="stat-compact">
+                            <span class="stat-label">Win Rate</span>
+                            <span class="stat-value">${player.win_rate}%</span>
+                        </div>
+                    </div>
+                    <div class="match-quality-badge ${qualityClass}">
+                        ${qualityIcon} ${qualityText}
+                    </div>
+                    <button class="challenge-btn" onclick="challengePlayer(${player.id}, '${player.name}')">
+                        ⚔️ Challenge
+                    </button>
+                `;
+                
+                container.appendChild(playerDiv);
+            });
+        })
+        .catch(err => {
+            console.error('Error loading online players:', err);
+            const container = document.getElementById('online-players-list');
+            if (container) {
+                container.innerHTML = `
+                    <div class="no-players-online">
+                        <div class="no-players-icon">⚠️</div>
+                        <p>Error loading online players</p>
+                        <p class="hint">Check console for details</p>
+                    </div>
+                `;
+            }
+        });
+}
+
+// Challenge a specific player
+function challengePlayer(opponentId, opponentName) {
+    if (!selectedDifficulty) {
+        showErrorModal('Please select a difficulty first!');
+        return;
+    }
+    
+    // Show confirmation modal
+    showConfirmModal(
+        'Challenge Player',
+        `Challenge ${opponentName} to a match?`,
+        () => {
+            // Create match with specific opponent
+            createChallengeMatch(opponentId, opponentName);
+        }
+    );
+}
+
+function createChallengeMatch(opponentId, opponentName) {
+    console.log('[CHALLENGE] Creating challenge match with:', opponentId, opponentName);
+    
+    fetch('/quiz/challenge_player', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            opponent_id: opponentId,
+            difficulty: selectedDifficulty
+        })
+    })
+    .then(res => res.json())
+    .then(data => {
+        console.log('[CHALLENGE] Response:', data);
+        
+        if (data.error) {
+            console.error('[CHALLENGE] Error:', data.error);
+            showErrorModal('Challenge Failed', data.error);
+        } else {
+            console.log('[CHALLENGE] Success! Match ID:', data.match_id);
+            showSuccessModal(
+                'Challenge Sent!',
+                `Match created with ${opponentName}! Starting quiz...`,
+                () => {
+                    console.log('[CHALLENGE] Redirecting to match...');
+                    window.location.href = '/quiz/match/' + data.match_id;
+                }
+            );
+        }
+    })
+    .catch(err => {
+        console.error('[CHALLENGE] Fetch error:', err);
+        showErrorModal('Connection Error', 'Failed to create challenge. Please try again.');
+    });
+}
+
+// Themed Modal Functions
+function showThemedModal(options) {
+    const modal = document.getElementById('themedModal');
+    const content = document.getElementById('modalContent');
+    const icon = document.getElementById('modalIcon');
+    const title = document.getElementById('modalTitle');
+    const message = document.getElementById('modalMessage');
+    const buttons = document.getElementById('modalButtons');
+    
+    // Set content
+    icon.textContent = options.icon || 'ℹ️';
+    title.textContent = options.title || 'Notification';
+    message.textContent = options.message || '';
+    
+    // Set theme
+    content.className = 'themed-modal';
+    if (options.theme) {
+        content.classList.add(options.theme);
+    }
+    
+    // Set buttons
+    buttons.innerHTML = '';
+    if (options.buttons) {
+        options.buttons.forEach(btn => {
+            const button = document.createElement('button');
+            button.className = `modal-btn ${btn.type || 'primary'}`;
+            button.textContent = btn.text;
+            button.onclick = btn.action;
+            buttons.appendChild(button);
+        });
+    } else {
+        const okBtn = document.createElement('button');
+        okBtn.className = 'modal-btn primary';
+        okBtn.textContent = 'OK';
+        okBtn.onclick = closeThemedModal;
+        buttons.appendChild(okBtn);
+    }
+    
+    // Show modal
+    modal.style.display = 'flex';
+}
+
+function closeThemedModal() {
+    const modal = document.getElementById('themedModal');
+    modal.style.animation = 'modalFadeOut 0.3s ease';
+    setTimeout(() => {
+        modal.style.display = 'none';
+        modal.style.animation = '';
+    }, 300);
+}
+
+// Convenience functions for different types
+function showSuccessModal(title, message, callback) {
+    console.log('[MODAL] Showing success modal:', title, message);
+    showThemedModal({
+        icon: '🎉',
+        title: title,
+        message: message,
+        theme: 'success',
+        buttons: [{
+            text: 'Great!',
+            type: 'success',
+            action: () => {
+                console.log('[MODAL] Success button clicked, executing callback');
+                closeThemedModal();
+                if (callback) {
+                    console.log('[MODAL] Executing callback function');
+                    callback();
+                } else {
+                    console.log('[MODAL] No callback provided');
+                }
+            }
+        }]
+    });
+}
+
+function showErrorModal(title, message) {
+    showThemedModal({
+        icon: '⚠️',
+        title: title,
+        message: message,
+        theme: 'error',
+        buttons: [{
+            text: 'OK',
+            type: 'danger',
+            action: closeThemedModal
+        }]
+    });
+}
+
+function showConfirmModal(title, message, onConfirm, onCancel) {
+    showThemedModal({
+        icon: '❓',
+        title: title,
+        message: message,
+        theme: 'warning',
+        buttons: [
+            {
+                text: 'Cancel',
+                type: 'secondary',
+                action: () => {
+                    closeThemedModal();
+                    if (onCancel) onCancel();
+                }
+            },
+            {
+                text: 'Confirm',
+                type: 'primary',
+                action: () => {
+                    closeThemedModal();
+                    if (onConfirm) onConfirm();
+                }
+            }
+        ]
+    });
+}
+
+function showChallengeModal(opponentName, onAccept) {
+    console.log('[MODAL] Showing challenge modal for:', opponentName);
+    showThemedModal({
+        icon: '⚔️',
+        title: 'Challenge Received!',
+        message: `You've been challenged by ${opponentName}! Ready to compete?`,
+        theme: 'info',
+        buttons: [
+            {
+                text: 'Not Now',
+                type: 'secondary',
+                action: () => {
+                    console.log('[MODAL] Challenge declined');
+                    closeThemedModal();
+                    challengeModalShown = false; // Allow checking again
+                }
+            },
+            {
+                text: 'Accept Challenge!',
+                type: 'success',
+                action: () => {
+                    console.log('[MODAL] Challenge accepted, executing callback');
+                    closeThemedModal();
+                    if (onAccept) {
+                        console.log('[MODAL] Executing accept callback');
+                        onAccept();
+                    }
+                }
+            }
+        ]
+    });
+}
+
+// Request notification permission with memory
+function requestNotificationPermission() {
+    // Check if user already dismissed or granted permission
+    const notificationChoice = localStorage.getItem('notificationChoice');
+    
+    // If user already made a choice, don't ask again
+    if (notificationChoice === 'dismissed' || notificationChoice === 'granted') {
+        console.log('[NOTIFICATION] User already made a choice:', notificationChoice);
+        return;
+    }
+    
+    // Check if browser supports notifications
+    if (!('Notification' in window)) {
+        console.log('[NOTIFICATION] Browser does not support notifications');
+        return;
+    }
+    
+    // If already granted, save it and return
+    if (Notification.permission === 'granted') {
+        localStorage.setItem('notificationChoice', 'granted');
+        console.log('[NOTIFICATION] Permission already granted');
+        return;
+    }
+    
+    // If already denied, don't ask again
+    if (Notification.permission === 'denied') {
+        localStorage.setItem('notificationChoice', 'dismissed');
+        console.log('[NOTIFICATION] Permission already denied');
+        return;
+    }
+    
+    // Show custom modal to request permission
+    showThemedModal({
+        icon: '🔔',
+        title: 'Enable Notifications',
+        message: 'Get notified when someone challenges you to a match!',
+        theme: 'info',
+        buttons: [
+            {
+                text: 'Not Now',
+                type: 'secondary',
+                action: () => {
+                    console.log('[NOTIFICATION] User clicked Not Now');
+                    localStorage.setItem('notificationChoice', 'dismissed');
+                    closeThemedModal();
+                }
+            },
+            {
+                text: 'Enable',
+                type: 'primary',
+                action: () => {
+                    console.log('[NOTIFICATION] User clicked Enable');
+                    closeThemedModal();
+                    
+                    // Request browser permission
+                    Notification.requestPermission().then(permission => {
+                        console.log('[NOTIFICATION] Browser permission result:', permission);
+                        if (permission === 'granted') {
+                            localStorage.setItem('notificationChoice', 'granted');
+                            showSuccessModal(
+                                'Notifications Enabled!',
+                                'You\'ll be notified when someone challenges you.',
+                                null
+                            );
+                        } else {
+                            localStorage.setItem('notificationChoice', 'dismissed');
+                        }
+                    });
+                }
+            }
+        ]
+    });
+}
+
+// Initialize when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    // Check for pending matches immediately on page load
+    checkForPendingMatch();
+    
+    // Keep checking every 3 seconds even if no difficulty selected
+    // This ensures challenged players are notified quickly
+    setInterval(checkForPendingMatch, 3000);
+    
+    // Request notification permission after a short delay (2 seconds)
+    setTimeout(requestNotificationPermission, 2000);
+});
+
+// Cleanup interval when leaving page
+window.addEventListener('beforeunload', function() {
+    if (onlinePlayersInterval) {
+        clearInterval(onlinePlayersInterval);
+    }
+});
 </script>
 
 <style>
@@ -284,6 +861,118 @@ function findMatch() {
     color: #721c24;
 }
 
+/* Modal Styles */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(5px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.modal-card {
+    background: white;
+    border-radius: 25px;
+    padding: 40px 35px;
+    max-width: 450px;
+    width: 90%;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    text-align: center;
+    animation: slideUp 0.3s ease;
+    position: relative;
+}
+
+@keyframes slideUp {
+    from {
+        transform: translateY(50px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.modal-icon {
+    font-size: 64px;
+    margin-bottom: 20px;
+    animation: bounce 0.6s ease;
+}
+
+@keyframes bounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-10px); }
+}
+
+.modal-title {
+    font-size: 28px;
+    color: #6200ff;
+    margin: 0 0 15px 0;
+    font-weight: 700;
+}
+
+.modal-message {
+    font-size: 16px;
+    color: #666;
+    margin: 0 0 30px 0;
+    line-height: 1.5;
+}
+
+.modal-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.modal-btn {
+    padding: 14px 32px;
+    border-radius: 30px;
+    font-size: 16px;
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    min-width: 140px;
+}
+
+.modal-btn-primary {
+    background: linear-gradient(135deg, #6200ff, #8f3dff);
+    color: white;
+    box-shadow: 0 4px 15px rgba(98, 0, 255, 0.3);
+}
+
+.modal-btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(98, 0, 255, 0.4);
+}
+
+.modal-btn-primary:active {
+    transform: translateY(0);
+}
+
+.modal-btn-secondary {
+    background: #f0f0f0;
+    color: #666;
+}
+
+.modal-btn-secondary:hover {
+    background: #e0e0e0;
+    color: #333;
+}
+
 @media screen and (max-width: 768px) {
     .quiz-hero h1 { font-size: 28px; }
     .quiz-hero p { font-size: 16px; }
@@ -296,7 +985,636 @@ function findMatch() {
     .difficulty-selection {
         padding: 30px 20px;
     }
+
+    .modal-card {
+        padding: 30px 25px;
+        width: 85%;
+    }
+
+    .modal-icon {
+        font-size: 52px;
+    }
+
+    .modal-title {
+        font-size: 24px;
+    }
+
+    .modal-message {
+        font-size: 15px;
+    }
+
+    .modal-actions {
+        flex-direction: column;
+    }
+
+    .modal-btn {
+        width: 100%;
+    }
+}
+
+/* Enhanced Matchmaking Styles */
+.status-details {
+    margin-top: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    align-items: center;
+}
+
+.status-step {
+    padding: 8px 16px;
+    background: #f0f0f0;
+    border-radius: 20px;
+    color: #666;
+    font-size: 14px;
+    transition: all 0.3s ease;
+    opacity: 0.5;
+}
+
+.status-step.active {
+    background: linear-gradient(135deg, #6200ff, #8f3dff);
+    color: white;
+    opacity: 1;
+    transform: scale(1.05);
+}
+
+.opponent-found {
+    text-align: center;
+    animation: slideIn 0.5s ease;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.success-icon {
+    font-size: 64px;
+    margin-bottom: 15px;
+    animation: bounce 0.6s ease;
+}
+
+.opponent-found h3 {
+    color: #6200ff;
+    margin: 0 0 20px 0;
+    font-size: 24px;
+}
+
+.opponent-info {
+    background: #f8f9fa;
+    border-radius: 15px;
+    padding: 20px;
+    margin: 20px 0;
+}
+
+.opponent-name {
+    font-size: 20px;
+    font-weight: 700;
+    color: #333;
+    margin-bottom: 15px;
+}
+
+.opponent-stats {
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+    margin-bottom: 15px;
+    flex-wrap: wrap;
+}
+
+.stat {
+    background: white;
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #666;
+    border: 1px solid #e0e0e0;
+}
+
+.elo-diff {
+    font-size: 16px;
+    font-weight: 700;
+    padding: 8px 16px;
+    border-radius: 20px;
+    margin-top: 10px;
+}
+
+.close-match {
+    background: linear-gradient(135deg, #28a745, #20c997);
+    color: white;
+}
+
+.skill-gap {
+    background: linear-gradient(135deg, #ffc107, #fd7e14);
+    color: white;
+}
+
+.starting-text {
+    margin-top: 20px;
+    color: #666;
+    font-style: italic;
+    animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
+/* Online Players Styles */
+.online-players-section {
+    max-width: 1000px;
+    margin: 30px auto;
+    padding: 0 20px;
+}
+
+/* Online Players Grid - Responsive */
+.online-players-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 25px;
+    margin-top: 20px;
+    max-width: 1200px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.online-player-card {
+    background: white;
+    border-radius: 15px;
+    padding: 18px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    border: 2px solid #e0e0e0;
+    transition: all 0.3s ease;
+    animation: fadeIn 0.3s ease;
+}
+
+.online-player-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 6px 20px rgba(98, 0, 255, 0.2);
+    border-color: #6200ff;
+}
+
+.online-player-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.online-indicator {
+    font-size: 12px;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.7; transform: scale(1.1); }
+}
+
+.player-info {
+    flex: 1;
+}
+
+.player-name {
+    font-size: 16px;
+    font-weight: 700;
+    color: #333;
+    margin-bottom: 3px;
+}
+
+.player-status {
+    font-size: 12px;
+    color: #28a745;
+    font-style: italic;
+}
+
+.player-stats-compact {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 12px;
+    padding: 10px;
+    background: #f8f9fa;
+    border-radius: 10px;
+}
+
+.stat-compact {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 1;
+}
+
+.stat-compact .stat-label {
+    font-size: 11px;
+    color: #666;
+    margin-bottom: 3px;
+}
+
+.stat-compact .stat-value {
+    font-size: 16px;
+    font-weight: 700;
+    color: #333;
+}
+
+.match-quality-badge {
+    text-align: center;
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.match-quality-badge.perfect-match {
+    background: linear-gradient(135deg, #28a745, #20c997);
+    color: white;
+}
+
+.match-quality-badge.close-match {
+    background: linear-gradient(135deg, #ffc107, #fd7e14);
+    color: white;
+}
+
+.match-quality-badge.skill-challenge {
+    background: linear-gradient(135deg, #6200ff, #8f3dff);
+    color: white;
+}
+
+.challenge-btn {
+    width: 100%;
+    padding: 12px;
+    margin-top: 12px;
+    background: linear-gradient(135deg, #ff6b6b, #ee5a6f);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 15px rgba(255, 107, 107, 0.3);
+}
+
+.challenge-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(255, 107, 107, 0.4);
+    background: linear-gradient(135deg, #ff5252, #e63946);
+}
+
+.challenge-btn:active {
+    transform: translateY(0);
+}
+
+.no-players-online {
+    text-align: center;
+    padding: 40px 20px;
+    grid-column: 1 / -1;
+}
+
+.no-players-icon {
+    font-size: 64px;
+    margin-bottom: 15px;
+    opacity: 0.5;
+}
+
+.no-players-online p {
+    color: #666;
+    margin: 10px 0;
+}
+
+.no-players-online .hint {
+    color: #6200ff;
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.loading-text, .error-text {
+    text-align: center;
+    color: #666;
+    font-style: italic;
+    padding: 40px 20px;
+    grid-column: 1 / -1;
+}
+
+.error-text {
+    color: #dc3545;
+}
+
+/* Online Players Grid Responsive Breakpoints */
+@media screen and (min-width: 1200px) {
+    .online-players-grid {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 30px;
+    }
+}
+
+@media screen and (max-width: 1199px) and (min-width: 992px) {
+    .online-players-grid {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 25px;
+    }
+}
+
+@media screen and (max-width: 991px) and (min-width: 768px) {
+    .online-players-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 20px;
+    }
+}
+
+@media screen and (max-width: 767px) and (min-width: 481px) {
+    .online-players-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 18px;
+    }
+    
+    .online-player-card {
+        padding: 16px;
+    }
+}
+
+@media screen and (max-width: 480px) {
+    .online-players-grid {
+        grid-template-columns: 1fr;
+        gap: 15px;
+    }
+    
+    .online-player-card {
+        padding: 15px;
+    }
+}
+
+@media screen and (max-width: 360px) {
+    .online-players-grid {
+        grid-template-columns: 1fr;
+        gap: 12px;
+    }
+    
+    .online-player-card {
+        padding: 12px;
+    }
+    
+    .player-stats-compact {
+        gap: 5px;
+    }
+
+    .stat-compact .stat-value {
+        font-size: 14px;
+    }
+}
+
+/* Themed Modal System */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    animation: modalFadeIn 0.3s ease;
+}
+
+@keyframes modalFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes modalFadeOut {
+    from { opacity: 1; }
+    to { opacity: 0; }
+}
+
+.themed-modal {
+    background: white;
+    border-radius: 25px;
+    padding: 40px 35px;
+    max-width: 450px;
+    width: 90%;
+    text-align: center;
+    position: relative;
+    animation: modalSlideIn 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.3);
+}
+
+@keyframes modalSlideIn {
+    0% {
+        transform: scale(0.3) translateY(-50px);
+        opacity: 0;
+    }
+    100% {
+        transform: scale(1) translateY(0);
+        opacity: 1;
+    }
+}
+
+.themed-modal .modal-icon {
+    font-size: 80px;
+    margin-bottom: 20px;
+    animation: modalIconBounce 0.6s ease;
+}
+
+@keyframes modalIconBounce {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.2); }
+}
+
+.themed-modal .modal-title {
+    font-size: 28px;
+    font-weight: 700;
+    color: #333;
+    margin: 0 0 15px 0;
+}
+
+.themed-modal .modal-message {
+    font-size: 18px;
+    color: #666;
+    line-height: 1.5;
+    margin: 0 0 30px 0;
+}
+
+.modal-buttons {
+    display: flex;
+    gap: 15px;
+    justify-content: center;
+}
+
+.modal-btn {
+    padding: 15px 30px;
+    font-size: 16px;
+    font-weight: 600;
+    border: none;
+    border-radius: 50px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    min-width: 120px;
+}
+
+.modal-btn.primary {
+    background: linear-gradient(135deg, #6200ff, #8f3dff);
+    color: white;
+    box-shadow: 0 8px 25px rgba(98, 0, 255, 0.3);
+}
+
+.modal-btn.primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 35px rgba(98, 0, 255, 0.4);
+}
+
+.modal-btn.secondary {
+    background: #f8f9fa;
+    color: #666;
+    border: 2px solid #e0e0e0;
+}
+
+.modal-btn.secondary:hover {
+    background: #e9ecef;
+    transform: translateY(-1px);
+}
+
+.modal-btn.success {
+    background: linear-gradient(135deg, #28a745, #20c997);
+    color: white;
+    box-shadow: 0 8px 25px rgba(40, 167, 69, 0.3);
+}
+
+.modal-btn.success:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 35px rgba(40, 167, 69, 0.4);
+}
+
+.modal-btn.danger {
+    background: linear-gradient(135deg, #dc3545, #c82333);
+    color: white;
+    box-shadow: 0 8px 25px rgba(220, 53, 69, 0.3);
+}
+
+.modal-btn.danger:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 35px rgba(220, 53, 69, 0.4);
+}
+
+/* Modal Themes */
+.themed-modal.success {
+    background: linear-gradient(135deg, #d4edda, #c3e6cb);
+}
+
+.themed-modal.success .modal-title {
+    color: #155724;
+}
+
+.themed-modal.success .modal-message {
+    color: #155724;
+}
+
+.themed-modal.error {
+    background: linear-gradient(135deg, #f8d7da, #f5c6cb);
+}
+
+.themed-modal.error .modal-title {
+    color: #721c24;
+}
+
+.themed-modal.error .modal-message {
+    color: #721c24;
+}
+
+.themed-modal.warning {
+    background: linear-gradient(135deg, #fff3cd, #ffeaa7);
+}
+
+.themed-modal.warning .modal-title {
+    color: #856404;
+}
+
+.themed-modal.warning .modal-message {
+    color: #856404;
+}
+
+.themed-modal.info {
+    background: linear-gradient(135deg, #d1ecf1, #bee5eb);
+}
+
+.themed-modal.info .modal-title {
+    color: #0c5460;
+}
+
+.themed-modal.info .modal-message {
+    color: #0c5460;
+}
+
+@media screen and (max-width: 768px) {
+    .themed-modal {
+        padding: 30px 25px;
+        width: 95%;
+    }
+    
+    .themed-modal .modal-icon {
+        font-size: 60px;
+    }
+    
+    .themed-modal .modal-title {
+        font-size: 24px;
+    }
+    
+    .themed-modal .modal-message {
+        font-size: 16px;
+    }
+    
+    .modal-buttons {
+        flex-direction: column;
+    }
+    
+    .modal-btn {
+        width: 100%;
+    }
 }
 </style>
+
+<script>
+// Comprehensive back button and swipe prevention
+(function() {
+    // Replace current history entry
+    if (window.history && window.history.replaceState) {
+        window.history.replaceState(null, null, window.location.href);
+    }
+    
+    // Prevent back navigation
+    window.addEventListener('popstate', function(event) {
+        window.history.pushState(null, null, window.location.href);
+    });
+    
+    // Push initial state
+    window.history.pushState(null, null, window.location.href);
+})();
+
+// Prevent page from being cached
+window.addEventListener('pageshow', function(event) {
+    if (event.persisted) {
+        window.location.reload();
+    }
+});
+
+// Prevent swipe gestures from navigating back
+window.addEventListener('load', function() {
+    window.history.pushState(null, null, window.location.href);
+});
+
+// Additional protection against back navigation
+window.onbeforeunload = function() {
+    window.history.pushState(null, null, window.location.href);
+};
+</script>
 
 {% endblock %}

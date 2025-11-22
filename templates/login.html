@@ -1,4 +1,5 @@
 {% extends 'app.html' %}
+{% block title %}Login - Learnico{% endblock %}
 {% block content %}
 
 <div class="header-section">
@@ -42,6 +43,21 @@ function togglePass(id) {
     let input = document.getElementById(id);
     input.type = input.type === "password" ? "text" : "password";
 }
+
+// Prevent caching and force server check
+window.addEventListener('pageshow', function(event) {
+    if (event.persisted || performance.navigation.type === 2) {
+        // Page was loaded from cache (back/forward button)
+        window.location.reload();
+    }
+});
+
+// Disable browser back/forward cache
+window.onpageshow = function(event) {
+    if (event.persisted) {
+        window.location.reload();
+    }
+};
 </script>
 
 {% endblock %}

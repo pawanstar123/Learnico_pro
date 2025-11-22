@@ -6,6 +6,9 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS matches_played INT DEFAULT 0;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS matches_won INT DEFAULT 0;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS total_xp INT DEFAULT 0;
 
+-- Add UNIQUE constraint to username (name column)
+ALTER TABLE users ADD UNIQUE KEY unique_username (name);
+
 -- Quiz questions table
 CREATE TABLE IF NOT EXISTS quiz_questions (
     id INT AUTO_INCREMENT PRIMARY KEY,

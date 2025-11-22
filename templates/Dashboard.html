@@ -1,21 +1,9 @@
 {% extends 'app.html' %}
+{% block title %}Dashboard - Learnico{% endblock %}
 {% block content %}
 
-<div class="header-section">
-    <nav class="dashboard-navbar">
-        <div class="nav-brand">Game Hub</div>
-        <div class="nav-links">
-            <a href="/Dashboard" class="nav-link">Home</a>
-            <a href="/quiz" class="nav-link">Quiz</a>
-            <a href="/leaderboard" class="nav-link">Leaderboard</a>
-            <a href="/profile" class="nav-link profile-icon" title="Profile">👤</a>
-            <a href="/logout" class="nav-link">Logout</a>
-        </div>
-    </nav>
-</div>
-
-<div class="container" style="margin-top: 0;">
-    <h2 style="color: #6200ff; margin-bottom: 8px; font-size: 28px;">Game Hub</h2>
+<div class="container" style="margin-top: 20px;">
+    <h2 style="color: #6200ff; margin-bottom: 8px; font-size: 28px;">Learnico</h2>
     <p style="color: #666; margin-bottom: 20px; font-size: 14px;">Level up your skills. Earn points. Unlock achievements.</p>
     {% if user %}
         <p style="margin: 10px 0 24px; color:#444">Welcome, <strong>{{ user[1] }}</strong>!</p>
@@ -45,7 +33,7 @@
         </div>
 
         <div class="game-card">
-            <div class="card-icon">👤</div>
+            <div class="card-icon">😊</div>
             <h3>Your Profile</h3>
             <p>View stats and update your profile.</p>
             <a class="btn btn-dark" href="/profile">Profile</a>
@@ -59,5 +47,40 @@
         </div>
     </div>
 </div>
+
+<script>
+// Comprehensive back button and swipe prevention
+(function() {
+    // Replace current history entry
+    if (window.history && window.history.replaceState) {
+        window.history.replaceState(null, null, window.location.href);
+    }
+    
+    // Prevent back navigation
+    window.addEventListener('popstate', function(event) {
+        window.history.pushState(null, null, window.location.href);
+    });
+    
+    // Push initial state
+    window.history.pushState(null, null, window.location.href);
+})();
+
+// Prevent page from being cached
+window.addEventListener('pageshow', function(event) {
+    if (event.persisted) {
+        window.location.reload();
+    }
+});
+
+// Prevent swipe gestures from navigating back
+window.addEventListener('load', function() {
+    window.history.pushState(null, null, window.location.href);
+});
+
+// Additional protection against back navigation
+window.onbeforeunload = function() {
+    window.history.pushState(null, null, window.location.href);
+};
+</script>
 
 {% endblock %}
